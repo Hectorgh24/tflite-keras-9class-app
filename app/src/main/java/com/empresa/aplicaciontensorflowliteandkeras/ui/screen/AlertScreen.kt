@@ -31,4 +31,4 @@ fun AlertScreen(countdown: Int, onCancel: () -> Unit) {
             Text("CANCELAR ALERTA", fontSize = 24.sp, fontWeight = FontWeight.Bold)
         }
     }
-}
+} //
