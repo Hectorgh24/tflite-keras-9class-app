@@ -8,7 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.telephony.SmsManager
 import android.widget.Toast
-//
+///
 fun ejecutarProtocoloEmergencia(context: Context, phoneNumber: String) {
     try {
         // 1. Obtener SmsManager con soporte universal
