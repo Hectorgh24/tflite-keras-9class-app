@@ -44,7 +44,8 @@ La lógica de predicción se basa en dos archivos fundamentales ubicados en `app
 
 ### Clonación
 ```bash
-git clone [https://github.com/hectorgh24/tflite-keras-9class-app.git](https://github.com/hectorgh24/tflite-keras-9class-app.git)
+git clone https://github.com/Hectorgh24/tflite-keras-9class-app.git
+```
 
 ---
 
@@ -57,6 +58,8 @@ Archivos clave dentro de `app/src/main/java/com/empresa/aplicaciontensorflowlite
 * `DataPreprocessor.kt`: Clase encargada de la estandarización Z-Score de los datos.
 * `EmergencyProtocol.kt`: Contiene la lógica aislada para detonar las alertas externas (SMS/Llamada/WhatsApp).
 * `ui/screen/`: Carpeta que contiene `AlertScreen.kt` (UI de alerta), `MonitorScreen.kt` y `AppNavigator.kt` (control central de pantallas).
+
+---
 
 ## 📖 Glosario Técnico
 * `50Hz`: El sensor registra 50 muestras de aceleración por cada segundo (una muestra cada 20 milisegundos).
