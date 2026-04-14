@@ -73,12 +73,9 @@ fun MainScreen(onOpenSettings: () -> Unit) {
         }
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding).fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            if (sosActive) {
-                // El botón Cancelar cambia el estado, lo que detiene la corrutina en el servicio
-                AlertScreen(countdown = countdown, onCancel = { MonitoringState.sosActive.value = false })
-            } else {
-                MonitorScreen(
-                    hasPermissions = hasPermissions,
+            // AlertScreen ahora es manejado globalmente por AppNavigator
+            MonitorScreen(
+                hasPermissions = hasPermissions,
                     isMonitoring = isMonitoring,
                     emergencyNumber = emergencyNumber,
                     currentPrediction = currentPrediction,
@@ -107,4 +104,3 @@ fun MainScreen(onOpenSettings: () -> Unit) {
             }
         }
     }
-}
