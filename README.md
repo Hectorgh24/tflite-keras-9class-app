@@ -45,3 +45,24 @@ La lógica de predicción se basa en dos archivos fundamentales ubicados en `app
 ### Clonación
 ```bash
 git clone [https://github.com/hectorgh24/tflite-keras-9class-app.git](https://github.com/hectorgh24/tflite-keras-9class-app.git)
+
+---
+
+## 📂 Estructura del Proyecto
+Archivos clave dentro de `app/src/main/java/com/empresa/aplicaciontensorflowliteandkeras/`:
+
+* `FallDetectionService.kt`: Gestiona el servicio de primer plano (Foreground Service) que mantiene el monitoreo activo.
+* `FallDetectionClassifier.kt`: Núcleo de IA que interactúa con el intérprete de LiteRT.
+* `SensorHandler.kt`: Maneja la captura del acelerómetro a una frecuencia estricta de 50Hz.
+* `DataPreprocessor.kt`: Clase encargada de la estandarización Z-Score de los datos.
+* `EmergencyProtocol.kt`: Contiene la lógica aislada para detonar las alertas externas (SMS/Llamada/WhatsApp).
+* `ui/screen/`: Carpeta que contiene `AlertScreen.kt` (UI de alerta), `MonitorScreen.kt` y `AppNavigator.kt` (control central de pantallas).
+
+## 📖 Glosario Técnico
+* `50Hz`: El sensor registra 50 muestras de aceleración por cada segundo (una muestra cada 20 milisegundos).
+* `Conv1D`: Red Neuronal Convolucional Unidimensional, ideal para analizar secuencias de series de tiempo como las del acelerómetro.
+* `Inferencia`: El proceso de ejecución del modelo de IA sobre nuevos datos para obtener una predicción.
+* `LiteRT`: Tecnología de Google que permite ejecutar modelos de ML en dispositivos móviles con baja latencia.
+* `m/s² vs G`: La aplicación convierte las lecturas nativas de Android (metros por segundo al cuadrado) a unidades de Gravedad (G) para coincidir con el entrenamiento del dataset.
+* `StandardScaler`: Método de normalización que resta la media y divide por la desviación estándar de los datos de entrenamiento.
+* `Z-Score`: El resultado de la estandarización que indica cuántas desviaciones estándar está un dato lejos de la media.
