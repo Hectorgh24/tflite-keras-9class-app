@@ -5,6 +5,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.util.Log
 
 class SensorHandler(
     context: Context,
@@ -14,45 +15,53 @@ class SensorHandler(
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
-    // Arreglo reutilizable para evitar carga en el Garbage Collector
-    private val dataWindow = FloatArray(453)
+    companion object {
+        private const val WINDOW_SIZE = 151
+        private const val TOTAL_FEATURES = 453 // 151 * 3
+        private const val SAMPLING_PERIOD_US = 20000 // 50Hz (20ms entre muestras)
+    }
+
+    // Buffers circulares para los 3 ejes
+    private val xBuffer = FloatArray(WINDOW_SIZE)
+    private val yBuffer = FloatArray(WINDOW_SIZE)
+    private val zBuffer = FloatArray(WINDOW_SIZE)
     private var currentIndex = 0
 
-    fun startListening() {
-        // Usar SENSOR_DELAY_GAME (~50Hz) suele coincidir con datasets como UniMiB-SHAR
+    fun start() {
         accelerometer?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+            sensorManager.registerListener(this, it, SAMPLING_PERIOD_US)
+            Log.d("SensorHandler", "Monitoreo iniciado a 50Hz")
         }
     }
 
-    fun stopListening() {
+    fun stop() {
         sensorManager.unregisterListener(this)
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        if (event == null || event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
+        if (event?.sensor?.type == Sensor.TYPE_ACCELEROMETER) {
+            // Guardar muestras en los buffers respectivos
+            xBuffer[currentIndex] = event.values[0]
+            yBuffer[currentIndex] = event.values[1]
+            zBuffer[currentIndex] = event.values[2]
 
-        // Insertar valores X, Y, Z en el arreglo secuencialmente
-        if (currentIndex < 453) {
-            dataWindow[currentIndex++] = event.values[0] // X
-            dataWindow[currentIndex++] = event.values[1] // Y
-            dataWindow[currentIndex++] = event.values[2] // Z
-        }
+            currentIndex++
 
-        // Si se llenó la ventana de 151 muestras (453 valores)
-        if (currentIndex >= 453) {
-            // Disparar callback enviando los datos crudos
-            onWindowReady(dataWindow)
+            // Cuando llenamos la ventana de 151 muestras
+            if (currentIndex >= WINDOW_SIZE) {
+                currentIndex = 0
+                val flatBuffer = FloatArray(TOTAL_FEATURES)
 
-            // Reiniciar el índice para comenzar la siguiente ventana
-            // Nota: Esto hace ventanas no superpuestas (no-overlapping).
-            // Si el modelo entrenó con ventanas superpuestas (ej. 50% overlap),
-            // aquí deberíamos desplazar los últimos datos al principio del arreglo.
-            currentIndex = 0
+                // IMPORTANTE: El modelo espera formato [X...X, Y...Y, Z...Z]
+                // debido a la capa Reshape(3, 151) + Permute(2, 1) definida en Python
+                System.arraycopy(xBuffer, 0, flatBuffer, 0, WINDOW_SIZE)
+                System.arraycopy(yBuffer, 0, flatBuffer, WINDOW_SIZE, WINDOW_SIZE)
+                System.arraycopy(zBuffer, 0, flatBuffer, WINDOW_SIZE * 2, WINDOW_SIZE)
+
+                onWindowReady(flatBuffer)
+            }
         }
     }
 
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        // No requiere acción para este modelo
-    }
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 }

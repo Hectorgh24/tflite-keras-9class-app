@@ -1,16 +1,25 @@
 package com.empresa.aplicaciontensorflowliteandkeras
 
 import android.content.Context
+import android.util.Log
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.support.common.FileUtil
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
 import org.tensorflow.lite.DataType
+import java.io.FileInputStream
+import java.nio.MappedByteBuffer
+import java.nio.channels.FileChannel
 
 class FallDetectionClassifier(context: Context) {
 
-    private var interpreter: Interpreter
+    private val interpreter: Interpreter
+    private val preprocessor = DataPreprocessor(context)
 
-    // Nombres de las clases según tu documento PDF
+    companion object {
+        private const val MODEL_PATH = "entrenamiento_9_clases_mejor_modelo.tflite"
+        private const val INPUT_SIZE = 453 // 151 muestras x 3 ejes
+        private const val OUTPUT_CLASSES = 9
+    }
+
     private val classLabels = arrayOf(
         "Caminando",
         "Caída frontal",
@@ -22,59 +31,56 @@ class FallDetectionClassifier(context: Context) {
         "Desmayo / Síncope",
         "Caída a la izquierda"
     )
-    /*private val classLabels = arrayOf(
-        "Walking",
-        "Generic falling forward",
-        "Falling rightward",
-        "Generic falling backward",
-        "Hitting an obstacle in the fall",
-        "Falling with protection strategies",
-        "Falling backward-sitting-chair",
-        "Syncope",
-        "Falling leftward"
-    )*/
 
     init {
-        // Cargar el modelo desde la carpeta assets
-        val modelBuffer = FileUtil.loadMappedFile(context, "entrenamiento_9_clases_mejor_modelo.tflite")
-
-        // Optimización para gama baja: Limitar a 2 hilos en CPU
+        // Se utiliza el método de lectura nativo en lugar del problemático FileUtil
+        val modelBuffer = loadModelFile(context, MODEL_PATH)
         val options = Interpreter.Options().apply {
-            numThreads = 2
+            setNumThreads(2)
         }
-
         interpreter = Interpreter(modelBuffer, options)
+        Log.d("Classifier", "Modelo TFLite cargado correctamente")
     }
 
     /**
-     * Recibe el arreglo preprocesado de tamaño 453, ejecuta la inferencia
-     * y retorna un par con la clase predicha y su probabilidad.
+     * Lee el modelo directamente desde los assets mapeándolo en memoria (Mmap).
+     * Esto evita los errores de FileProvider y compresión de la librería de soporte.
      */
-    fun classify(inputData: FloatArray): Pair<String, Float> {
-        // Preparar buffer de entrada (1 lote, 453 características)
-        val inputBuffer = TensorBuffer.createFixedSize(intArrayOf(1, 453), DataType.FLOAT32)
-        inputBuffer.loadArray(inputData)
+    private fun loadModelFile(context: Context, modelPath: String): MappedByteBuffer {
+        val fileDescriptor = context.assets.openFd(modelPath)
+        val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
+        val fileChannel = inputStream.channel
+        val startOffset = fileDescriptor.startOffset
+        val declaredLength = fileDescriptor.declaredLength
+        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+    }
 
-        // Preparar buffer de salida (1 lote, 9 clases)
-        val outputBuffer = TensorBuffer.createFixedSize(intArrayOf(1, 9), DataType.FLOAT32)
-
-        // Ejecutar inferencia
-        interpreter.run(inputBuffer.buffer, outputBuffer.buffer)
-
-        // Obtener el arreglo de probabilidades
-        val probabilities = outputBuffer.floatArray
-
-        // Encontrar el índice con la mayor probabilidad (ArgMax)
-        var maxIndex = 0
-        var maxProb = probabilities[0]
-        for (i in 1 until probabilities.size) {
-            if (probabilities[i] > maxProb) {
-                maxProb = probabilities[i]
-                maxIndex = i
-            }
+    fun classify(rawData: FloatArray): Pair<String, Float> {
+        if (rawData.size != INPUT_SIZE) {
+            Log.e("Classifier", "Error de dimensiones. Esperado: $INPUT_SIZE, Recibido: ${rawData.size}")
+            return Pair("Error de dimensiones", 0f)
         }
 
-        return Pair(classLabels[maxIndex], maxProb)
+        return try {
+            preprocessor.standardizeInPlace(rawData)
+
+            val inputBuffer = TensorBuffer.createFixedSize(intArrayOf(1, 151, 3), DataType.FLOAT32)
+            inputBuffer.loadArray(rawData)
+
+            val outputBuffer = TensorBuffer.createFixedSize(intArrayOf(1, OUTPUT_CLASSES), DataType.FLOAT32)
+
+            interpreter.run(inputBuffer.buffer, outputBuffer.buffer)
+
+            val probabilities = outputBuffer.floatArray
+            val maxIndex = probabilities.indices.maxByOrNull { probabilities[it] } ?: 0
+            val confidence = probabilities[maxIndex]
+
+            Pair(classLabels[maxIndex], confidence)
+
+        } catch (e: Exception) {
+            Log.e("Classifier", "Error crítico durante la inferencia con el modelo TFLite", e)
+            Pair("Error", 0f)
+        }
     }
 
     fun close() {
