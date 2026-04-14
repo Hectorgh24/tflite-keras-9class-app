@@ -69,3 +69,18 @@ Archivos clave dentro de `app/src/main/java/com/empresa/aplicaciontensorflowlite
 * `m/s² vs G`: La aplicación convierte las lecturas nativas de Android (metros por segundo al cuadrado) a unidades de Gravedad (G) para coincidir con el entrenamiento del dataset.
 * `StandardScaler`: Método de normalización que resta la media y divide por la desviación estándar de los datos de entrenamiento.
 * `Z-Score`: El resultado de la estandarización que indica cuántas desviaciones estándar está un dato lejos de la media.
+
+---
+
+## 🚀 Funcionalidades
+
+La aplicación móvil ofrece las siguientes funcionalidades principales:
+
+- **Detección de caídas en tiempo real**: Utiliza el acelerómetro del dispositivo para monitorear movimientos y detectar patrones característicos de caídas mediante un modelo de inteligencia artificial entrenado con 9 clases de actividades.
+- **Monitoreo continuo**: Ejecuta un servicio en primer plano que mantiene el análisis activo incluso cuando la app está en segundo plano, registrando datos a 50Hz.
+- **Clasificación de actividades**: El modelo clasifica 9 tipos diferentes de movimientos humanos, incluyendo caídas, para una detección precisa.
+- **Normalización de datos**: Aplica estandarización Z-Score usando parámetros de media y desviación estándar del entrenamiento para preparar los datos antes de la inferencia.
+- **Interfaz de usuario intuitiva**: Incluye pantallas para iniciar/detener monitoreo, configurar número de emergencia y visualizar alertas.
+- **Protocolo de emergencia**: Al detectar una caída, inicia una cuenta regresiva con alertas sonoras; si no se cancela, envía SMS, mensajes de WhatsApp y realiza una llamada automática al contacto configurado.
+- **Almacenamiento de logs**: Registra sesiones de monitoreo en archivos JSON, incluyendo métricas como ventanas analizadas, caídas detectadas y alertas activadas.
+- **Generación de reportes**: Permite obtener reportes de la actividad de monitoreo desde la pantalla de configuración.
