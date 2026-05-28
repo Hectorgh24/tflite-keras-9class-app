@@ -39,6 +39,7 @@ fun MonitorScreen(
                         onNumberChange(digitsOnly)
                     }
                 },
+                leadingIcon = { Text("🇲🇽", fontSize = 18.sp) },
                 label = { Text("Contacto de Emergencia") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),

@@ -47,6 +47,7 @@ fun AppNavigator() {
                 },
                 onTimeout = {
                     if (emergencyNumber.isNotEmpty()) {
+                        MonitoringLogManager.recordAlert(context)
                         ejecutarProtocoloEmergencia(context, emergencyNumber)
                     }
                     MonitoringState.sosActive.value = false

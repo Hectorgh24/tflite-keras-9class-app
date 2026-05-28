@@ -45,6 +45,9 @@ class SensorHandler(
             yBuffer[currentIndex] = event.values[1]
             zBuffer[currentIndex] = event.values[2]
 
+            // Registrar cada muestra individual para el gráfico en tiempo real
+            MonitoringLogManager.recordSensorData(event.values[0], event.values[1], event.values[2])
+
             currentIndex++
 
             // Cuando llenamos la ventana de 151 muestras

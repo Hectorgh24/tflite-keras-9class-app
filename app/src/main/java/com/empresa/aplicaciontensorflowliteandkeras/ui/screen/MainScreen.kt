@@ -33,22 +33,39 @@ fun MainScreen(onOpenSettings: () -> Unit) {
     var hasPermissions by remember { mutableStateOf(false) }
     var emergencyNumber by remember { mutableStateOf(sharedPrefs.getString("phone", "") ?: "") }
 
+    val checkPermissions = {
+        val smsGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+        val callGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+
+        // ACTIVITY_RECOGNITION es necesario para el foreground service "health" en Android 14+
+        val activityRecognitionGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+        else true
+
+        // POST_NOTIFICATIONS es necesario para mostrar la notificación del servicio en Android 13+
+        val notificationsGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        else true
+
+        smsGranted && callGranted && activityRecognitionGranted && notificationsGranted
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val sms = permissions[Manifest.permission.SEND_SMS] ?: false
-        val call = permissions[Manifest.permission.CALL_PHONE] ?: false
-        hasPermissions = sms && call
+    ) {
+        hasPermissions = checkPermissions()
     }
 
     LaunchedEffect(Unit) {
-        val smsGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
-        val callGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
-        hasPermissions = smsGranted && callGranted
+        hasPermissions = checkPermissions()
 
-        val permissionsToRequest = mutableListOf(Manifest.permission.SEND_SMS, Manifest.permission.CALL_PHONE)
+        val permissionsToRequest =
+            mutableListOf(Manifest.permission.SEND_SMS, Manifest.permission.CALL_PHONE)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            permissionsToRequest.add(Manifest.permission.ACTIVITY_RECOGNITION)
         }
 
         if (!hasPermissions) {
@@ -72,35 +89,55 @@ fun MainScreen(onOpenSettings: () -> Unit) {
             )
         }
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding).fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Box(
+            modifier = Modifier.padding(innerPadding).fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
             // AlertScreen ahora es manejado globalmente por AppNavigator
             MonitorScreen(
                 hasPermissions = hasPermissions,
-                    isMonitoring = isMonitoring,
-                    emergencyNumber = emergencyNumber,
-                    currentPrediction = currentPrediction,
-                    onNumberChange = {
-                        emergencyNumber = it
-                        sharedPrefs.edit().putString("phone", it).apply()
-                    },
-                    onRequestPermissions = {
-                        val perms = mutableListOf(Manifest.permission.SEND_SMS, Manifest.permission.CALL_PHONE)
+                isMonitoring = isMonitoring,
+                emergencyNumber = emergencyNumber,
+                currentPrediction = currentPrediction,
+                onNumberChange = {
+                    emergencyNumber = it
+                    sharedPrefs.edit().putString("phone", it).apply()
+                },
+                onRequestPermissions = {
+                    hasPermissions = checkPermissions()
+                    if (!hasPermissions) {
+                        val perms =
+                            mutableListOf(Manifest.permission.SEND_SMS, Manifest.permission.CALL_PHONE)
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) perms.add(Manifest.permission.ACTIVITY_RECOGNITION)
                         permissionLauncher.launch(perms.toTypedArray())
-                    },
-                    onToggleMonitoring = {
-                        if (emergencyNumber.length < 10 && !isMonitoring) {
-                            Toast.makeText(context, "Ingresa un número válido", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onToggleMonitoring = {
+                    if (emergencyNumber.length < 10 && !isMonitoring) {
+                        Toast.makeText(context, "Ingresa un número válido", Toast.LENGTH_SHORT)
+                            .show()
+                    } else {
+                        val serviceIntent =
+                            Intent(context, FallDetectionService::class.java).apply {
+                                putExtra("EMERGENCY_NUMBER", emergencyNumber)
+                            }
+                        if (isMonitoring) {
+                            context.stopService(serviceIntent)
                         } else {
-                            val serviceIntent = Intent(context, FallDetectionService::class.java)
-                            if (isMonitoring) {
-                                context.stopService(serviceIntent)
-                            } else {
+                            try {
                                 ContextCompat.startForegroundService(context, serviceIntent)
+                            } catch (e: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    "No se pudo iniciar el monitoreo: ${e.message}",
+                                    Toast.LENGTH_LONG
+                                ).show()
                             }
                         }
                     }
-                )
-            }
+                }
+            )
         }
     }
+}

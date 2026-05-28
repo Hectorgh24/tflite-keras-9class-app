@@ -11,7 +11,9 @@ Este proyecto es una aplicación móvil avanzada para Android desarrollada en **
 3. [🧠 Recursos de Inteligencia Artificial](#-recursos-de-inteligencia-artificial)
 4. [📲 Guía de Instalación y Uso](#-guía-de-instalación-y-uso)
 5. [📂 Estructura del Proyecto](#-estructura-del-proyecto)
-6. [📖 Glosario Técnico](#-glosario-técnico)
+6. [📊 Sistema de Monitoreo y Gráficos](#-sistema-de-monitoreo-y-gráficos)
+7. [📖 Glosario Técnico](#-glosario-técnico)
+8. [🚀 Funcionalidades](#-funcionalidades)
 
 ---
 
@@ -52,12 +54,64 @@ git clone https://github.com/Hectorgh24/tflite-keras-9class-app.git
 ## 📂 Estructura del Proyecto
 Archivos clave dentro de `app/src/main/java/com/empresa/aplicaciontensorflowliteandkeras/`:
 
-* `FallDetectionService.kt`: Gestiona el servicio de primer plano (Foreground Service) que mantiene el monitoreo activo.
+* `FallDetectionService.kt`: Gestiona el servicio de primer plano con `ExecutorService` para inferencia en segundo plano segura.
 * `FallDetectionClassifier.kt`: Núcleo de IA que interactúa con el intérprete de LiteRT.
-* `SensorHandler.kt`: Maneja la captura del acelerómetro a una frecuencia estricta de 50Hz.
+* `SensorHandler.kt`: Maneja la captura del acelerómetro a 50Hz y publica cada muestra al historial para los gráficos.
 * `DataPreprocessor.kt`: Clase encargada de la estandarización Z-Score de los datos.
 * `EmergencyProtocol.kt`: Contiene la lógica aislada para detonar las alertas externas (SMS/Llamada/WhatsApp).
-* `ui/screen/`: Carpeta que contiene `AlertScreen.kt` (UI de alerta), `MonitorScreen.kt` y `AppNavigator.kt` (control central de pantallas).
+* `MonitoringState.kt`: Estado global reactivo (StateFlow) de la sesión, incluyendo historial de predicciones y sensor.
+* `MonitoringLogManager.kt`: Gestiona el ciclo de vida de la sesión de monitoreo, el historial de gráficos y la exportación JSON.
+* `ui/screen/`: Pantallas principales: `AlertScreen.kt`, `MonitorScreen.kt`, `MainScreen.kt`, `SettingsScreen.kt` y `AppNavigator.kt`.
+* `ui/screen/charts/SensorChart.kt`: Gráfico de línea en tiempo real para los datos del acelerómetro (ejes X, Y, Z).
+* `ui/screen/charts/TimelineChart.kt`: Gráfico de dispersión del historial de predicciones de las 9 clases a lo largo del tiempo.
+
+---
+
+## 📊 Sistema de Monitoreo y Gráficos
+
+La pantalla **Ajustes** incluye un panel de monitoreo en tiempo real que se activa durante (y después de) una sesión. Contiene dos gráficos implementados con `Canvas` nativo de Jetpack Compose:
+
+### 📈 Gráfico de Acelerómetro (`SensorChart`)
+Muestra los datos crudos del acelerómetro en tiempo real, con una línea para cada eje:
+- **Eje X** — Rojo
+- **Eje Y** — Verde
+- **Eje Z** — Azul
+
+Características técnicas:
+- Ventana deslizante de los **últimos 500 puntos** (~10 segundos a 50Hz) para no consumir memoria ilimitada.
+- Rango fijo del eje Y de **-25 a +25 m/s²**.
+- Cuadrícula automática cada 2 segundos en el eje X y cada 10 m/s² en el eje Y.
+
+### 🗓️ Gráfico de Línea de Tiempo (`TimelineChart`)
+Muestra el historial completo de predicciones del modelo como un **diagrama de dispersión**:
+- El **eje Y** representa las 9 clases del modelo.
+- El **eje X** representa el tiempo transcurrido en segundos desde el inicio de la sesión.
+- Los puntos de **caída** (clases 1–8) se dibujan en **rojo**.
+- La actividad **normal** (clase 0: Caminando) se dibuja en **azul**.
+- Soporta **scroll horizontal** y ventana de visualización de 60 segundos para evitar desbordamiento de textura en Android.
+
+### 🗂️ Clases del modelo (9 clases)
+| Índice | Clase | Tipo |
+|--------|-------|------|
+| 0 | Caminando | Normal |
+| 1 | Caída frontal | Caída |
+| 2 | Caída a la derecha | Caída |
+| 3 | Caída hacia atrás | Caída |
+| 4 | Caída contra obstáculo | Caída |
+| 5 | Caída (intentando protegerse) | Caída |
+| 6 | Caída al sentarse | Caída |
+| 7 | Desmayo / Síncope | Caída |
+| 8 | Caída a la izquierda | Caída |
+
+### 📁 Exportación de Sesión
+Desde el panel de ajustes se puede generar un **reporte JSON** con la información completa de la sesión:
+- Timestamps de inicio y fin (ISO 8601)
+- Duración total en segundos
+- Ventanas de sensor procesadas
+- Número de caídas detectadas y alertas enviadas
+- **Historial completo de predicciones** (segundo + clase predicha)
+
+El archivo se guarda con el nombre `datos-monitoreo-tensorflow-keras-9-clases.json` en la carpeta **Descargas** del dispositivo.
 
 ---
 
