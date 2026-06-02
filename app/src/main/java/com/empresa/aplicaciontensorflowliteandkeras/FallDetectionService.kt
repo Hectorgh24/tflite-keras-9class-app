@@ -3,10 +3,13 @@ package com.empresa.aplicaciontensorflowliteandkeras
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.CountDownTimer
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.util.concurrent.ExecutorService
@@ -20,11 +23,27 @@ class FallDetectionService : Service() {
     @Volatile
     private var classifierReady = false
 
+    /** WakeLock parcial para mantener la CPU activa incluso con pantalla apagada */
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    /** Temporizador de 2 minutos (120 000 ms) para auto-detener la sesión */
+    private var sessionTimer: CountDownTimer? = null
+
     override fun onCreate() {
         super.onCreate()
 
         // 1. Crear el canal de notificaciones (OBLIGATORIO para evitar cierres forzados)
         createNotificationChannel()
+
+        // 2. Adquirir WakeLock parcial para que la CPU no se duerma en segundo plano
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "FallDetector::MonitoringWakeLock"
+        ).apply {
+            // Timeout de seguridad de 3 minutos (180s) por si algo falla
+            acquire(3 * 60 * 1000L)
+        }
 
         inferenceExecutor = Executors.newSingleThreadExecutor()
         inferenceExecutor.execute {
@@ -90,8 +109,11 @@ class FallDetectionService : Service() {
             if (!MonitoringState.sosActive.value) {
                 MonitoringState.sosActive.value = true
 
+                // Usar FLAG_ACTIVITY_SINGLE_TOP para traer la Activity existente al frente
+                // sin recrearla, evitando que la navegación se reinicie y saque al usuario
+                // de la pantalla de monitoreo
                 val intent = Intent(this, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
                     putExtra("FALL_DETECTED", true)
                     putExtra("FALL_TYPE", label)
                 }
@@ -104,11 +126,13 @@ class FallDetectionService : Service() {
         val emergencyNumber = intent?.getStringExtra("EMERGENCY_NUMBER") ?: ""
         MonitoringLogManager.startSession(this, emergencyNumber)
         MonitoringState.isMonitoring.value = true
+        MonitoringState.remainingSeconds.value = 120
 
         val notification = NotificationCompat.Builder(this, "fall_channel")
             .setContentTitle("Protección activa")
             .setContentText("Monitoreando actividad en segundo plano")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setOngoing(true)
             .build()
 
         // 2. Iniciar el servicio en primer plano con el tipo correcto (obligatorio en Android 14+)
@@ -119,10 +143,37 @@ class FallDetectionService : Service() {
         }
         sensorHandler.start()
 
+        // 3. Iniciar temporizador de 2 minutos (120 000 ms)
+        startSessionTimer()
+
         return START_STICKY
     }
 
+    /**
+     * Temporizador de sesión: al llegar a 0, detiene el monitoreo automáticamente
+     * guardando todos los datos correctamente.
+     */
+    private fun startSessionTimer() {
+        sessionTimer?.cancel()
+        sessionTimer = object : CountDownTimer(120_000L, 1_000L) {
+            override fun onTick(millisUntilFinished: Long) {
+                MonitoringState.remainingSeconds.value = (millisUntilFinished / 1000).toInt()
+            }
+
+            override fun onFinish() {
+                MonitoringState.remainingSeconds.value = 0
+                Log.d("FallService", "Temporizador de 2 minutos completado. Auto-deteniendo monitoreo.")
+                // Detener el servicio limpiamente (invoca onDestroy que guarda datos)
+                stopSelf()
+            }
+        }.start()
+    }
+
     override fun onDestroy() {
+        // Cancelar temporizador si aún está activo
+        sessionTimer?.cancel()
+        sessionTimer = null
+
         MonitoringLogManager.stopSession(this)
         MonitoringState.isMonitoring.value = false
         MonitoringState.currentPrediction.value = "Inactivo"
@@ -132,6 +183,13 @@ class FallDetectionService : Service() {
             classifier.close()
         }
         inferenceExecutor.shutdownNow()
+
+        // Liberar WakeLock
+        wakeLock?.let {
+            if (it.isHeld) it.release()
+        }
+        wakeLock = null
+
         super.onDestroy()
     }
 

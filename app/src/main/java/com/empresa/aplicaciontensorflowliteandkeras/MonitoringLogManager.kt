@@ -13,6 +13,7 @@ import android.provider.MediaStore
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Evento de predicción individual para el gráfico de línea de tiempo.
@@ -73,6 +74,18 @@ data class MonitoringSessionLog(
                 historyArray.put(eventObj)
             }
             put("predictionHistory", historyArray)
+
+            // Incluir datos completos del acelerómetro para reconstrucción de gráfico por Python
+            val sensorArray = JSONArray()
+            sensorHistory.forEach { data ->
+                val sensorObj = JSONObject()
+                sensorObj.put("timeOffsetMillis", data.timeOffsetMillis)
+                sensorObj.put("x", data.x.toDouble())
+                sensorObj.put("y", data.y.toDouble())
+                sensorObj.put("z", data.z.toDouble())
+                sensorArray.put(sensorObj)
+            }
+            put("sensorHistory", sensorArray)
         }
     }
 
@@ -83,6 +96,24 @@ data class MonitoringSessionLog(
         }
 
         fun fromJson(json: JSONObject): MonitoringSessionLog {
+            val sensorList = mutableListOf<SensorEventData>()
+            val sensorArr = json.optJSONArray("sensorHistory")
+            if (sensorArr != null) {
+                for (i in 0 until sensorArr.length()) {
+                    val obj = sensorArr.optJSONObject(i)
+                    if (obj != null) {
+                        sensorList.add(
+                            SensorEventData(
+                                obj.optLong("timeOffsetMillis"),
+                                obj.optDouble("x", 0.0).toFloat(),
+                                obj.optDouble("y", 0.0).toFloat(),
+                                obj.optDouble("z", 0.0).toFloat()
+                            )
+                        )
+                    }
+                }
+            }
+
             return MonitoringSessionLog(
                 sessionStartMillis = json.optLong("sessionStartMillis"),
                 sessionEndMillis = if (json.isNull("sessionEndMillis")) null else json.optLong("sessionEndMillis"),
@@ -101,7 +132,8 @@ data class MonitoringSessionLog(
                             }
                         }
                     }
-                }
+                },
+                sensorHistory = sensorList
             )
         }
     }
@@ -114,7 +146,29 @@ object MonitoringLogManager {
     private const val LOG_FILE_NAME = "monitoring_log.json"
     private const val EXPORT_FILE_NAME = "datos-monitoreo-tensorflow-keras-9-clases.json"
 
+    /**
+     * Lista completa de datos del sensor para guardar en el JSON final.
+     * Usa CopyOnWriteArrayList para evitar ConcurrentModificationException desde
+     * el hilo del sensor.
+     */
+    private val fullSensorHistory = CopyOnWriteArrayList<SensorEventData>()
+
+    /**
+     * Buffer circular para la visualización en tiempo real del gráfico.
+     * Solo los últimos 500 puntos (~10 segundos a 50Hz).
+     */
+    private val displaySensorBuffer = CopyOnWriteArrayList<SensorEventData>()
+
+    /** Contador de throttle para publicar al StateFlow solo cada N muestras (~4Hz visual) */
+    private var sensorSampleCount = 0
+    private const val PUBLISH_EVERY_N = 12 // A 50Hz, publicar cada 12 muestras ≈ 4Hz de refresco
+
     fun startSession(context: Context, emergencyNumber: String) {
+        // Limpiar buffers de sesión anterior
+        fullSensorHistory.clear()
+        displaySensorBuffer.clear()
+        sensorSampleCount = 0
+
         val session = MonitoringSessionLog(
             sessionStartMillis = System.currentTimeMillis(),
             emergencyNumber = emergencyNumber
@@ -123,6 +177,7 @@ object MonitoringLogManager {
         // Limpiar historial de gráficos al iniciar nueva sesión
         MonitoringState.predictionHistory.value = emptyList()
         MonitoringState.sensorHistory.value = emptyList()
+        MonitoringState.remainingSeconds.value = 120
         saveCurrentSession(context)
     }
 
@@ -141,19 +196,32 @@ object MonitoringLogManager {
     }
 
     /**
-     * Registra datos crudos del sensor acelerómetro para el gráfico en tiempo real.
-     * Mantiene solo los últimos 500 puntos (~10 segundos a 50Hz) para ahorrar memoria.
+     * Registra datos crudos del sensor acelerómetro.
+     * - Guarda TODOS los datos en fullSensorHistory para el JSON de exportación.
+     * - Mantiene solo los últimos 500 puntos en displaySensorBuffer para el gráfico.
+     * - Publica al StateFlow solo cada N muestras para evitar recomposiciones excesivas
+     *   que causan que los gráficos se "traben".
      */
     fun recordSensorData(x: Float, y: Float, z: Float) {
         _currentSession.value?.let { session ->
             val offset = System.currentTimeMillis() - session.sessionStartMillis
-            session.sensorHistory.add(SensorEventData(offset, x, y, z))
-            // Limitar a los últimos 500 puntos (aprox 10 seg a 50Hz)
-            if (session.sensorHistory.size > 500) {
-                session.sensorHistory.removeAt(0)
+            val data = SensorEventData(offset, x, y, z)
+
+            // Guardar en historial completo (sin límite, para exportación a JSON/Python)
+            fullSensorHistory.add(data)
+
+            // Guardar en buffer circular para gráfico en tiempo real
+            displaySensorBuffer.add(data)
+            if (displaySensorBuffer.size > 500) {
+                displaySensorBuffer.removeAt(0)
             }
-            // Publicar snapshot al StateFlow para que Compose lo observe
-            MonitoringState.sensorHistory.value = ArrayList(session.sensorHistory)
+
+            // Throttle: publicar al StateFlow solo cada N muestras para evitar congelamiento
+            sensorSampleCount++
+            if (sensorSampleCount >= PUBLISH_EVERY_N) {
+                sensorSampleCount = 0
+                MonitoringState.sensorHistory.value = ArrayList(displaySensorBuffer)
+            }
         }
     }
 
@@ -180,6 +248,9 @@ object MonitoringLogManager {
 
     fun stopSession(context: Context) {
         _currentSession.value?.let {
+            // Copiar los datos completos del sensor al log de sesión antes de guardar
+            it.sensorHistory.clear()
+            it.sensorHistory.addAll(fullSensorHistory)
             _currentSession.value = it.copy(sessionEndMillis = System.currentTimeMillis())
             saveCurrentSession(context)
         }
@@ -202,6 +273,11 @@ object MonitoringLogManager {
     fun exportReport(context: Context): String? {
         val session = _currentSession.value ?: loadLastSession(context)
         return session?.let {
+            // Si la sesión activa no tiene datos de sensor copiados aún, inyectarlos
+            if (it.sensorHistory.isEmpty() && fullSensorHistory.isNotEmpty()) {
+                it.sensorHistory.addAll(fullSensorHistory)
+            }
+
             val jsonContent = it.toJson().toString(2)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver = context.contentResolver

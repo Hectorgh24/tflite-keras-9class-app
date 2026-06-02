@@ -8,6 +8,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -17,6 +18,7 @@ fun MonitorScreen(
     isMonitoring: Boolean,
     emergencyNumber: String,
     currentPrediction: String,
+    remainingSeconds: Int,
     onNumberChange: (String) -> Unit,
     onRequestPermissions: () -> Unit,
     onToggleMonitoring: () -> Unit
@@ -55,7 +57,44 @@ fun MonitorScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
             Text("Estado del Modelo:", fontSize = 18.sp, color = MaterialTheme.colorScheme.onBackground)
-            Text(currentPrediction, fontSize = 20.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            Text(
+                currentPrediction,
+                fontSize = 20.sp,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+
+            // Temporizador de sesión visible durante el monitoreo
+            if (isMonitoring) {
+                Spacer(modifier = Modifier.height(16.dp))
+                val minutes = remainingSeconds / 60
+                val seconds = remainingSeconds % 60
+                val timerColor = if (remainingSeconds <= 10)
+                    MaterialTheme.colorScheme.error
+                else
+                    MaterialTheme.colorScheme.tertiary
+
+                Text(
+                    text = "Tiempo restante",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = String.format("%d:%02d", minutes, seconds),
+                    fontSize = 36.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = timerColor,
+                    textAlign = TextAlign.Center
+                )
+                if (remainingSeconds <= 10) {
+                    Text(
+                        text = "Finalizando pronto...",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(48.dp))
 
             Button(

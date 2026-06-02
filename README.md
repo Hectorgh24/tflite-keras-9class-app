@@ -14,6 +14,8 @@ Este proyecto es una aplicación móvil avanzada para Android desarrollada en **
 6. [📊 Sistema de Monitoreo y Gráficos](#-sistema-de-monitoreo-y-gráficos)
 7. [📖 Glosario Técnico](#-glosario-técnico)
 8. [🚀 Funcionalidades](#-funcionalidades)
+9. [⚡ Optimizaciones de Rendimiento y Estabilidad](#-optimizaciones-de-rendimiento-y-estabilidad)
+10. [🐍 Script Python de Reconstrucción](#-script-python-de-reconstrucción)
 
 ---
 
@@ -138,3 +140,65 @@ La aplicación móvil ofrece las siguientes funcionalidades principales:
 - **Protocolo de emergencia**: Al detectar una caída, inicia una cuenta regresiva con alertas sonoras; si no se cancela, envía SMS, mensajes de WhatsApp y realiza una llamada automática al contacto configurado.
 - **Almacenamiento de logs**: Registra sesiones de monitoreo en archivos JSON, incluyendo métricas como ventanas analizadas, caídas detectadas y alertas activadas.
 - **Generación de reportes**: Permite obtener reportes de la actividad de monitoreo desde la pantalla de configuración.
+
+---
+
+## ⚡ Optimizaciones de Rendimiento y Estabilidad
+
+Mejoras implementadas para garantizar una operación confiable del servicio de monitoreo en segundo plano y una experiencia de usuario fluida:
+
+### Temporizador de Sesión de 2 Minutos
+- Cada sesión de monitoreo dura exactamente **120 segundos** y se auto-detiene al finalizar.
+- Se muestra un temporizador visual en la pantalla de monitoreo que cambia a rojo en los últimos 10 segundos.
+- Implementado con `CountDownTimer` que actualiza el estado reactivo `MonitoringState.remainingSeconds`.
+
+### WakeLock Parcial para Ejecución en Segundo Plano
+- Se adquiere un `PARTIAL_WAKE_LOCK` al iniciar el servicio para mantener la CPU activa incluso con la pantalla apagada.
+- Timeout de seguridad de 3 minutos para evitar fugas de recursos.
+- Se agregó el permiso `WAKE_LOCK` al `AndroidManifest.xml`.
+
+### Optimización de Gráficos en Tiempo Real (Anti-Congelamiento)
+- Se separaron los datos del sensor en dos buffers:
+  - `fullSensorHistory`: almacena **todas** las muestras para la exportación JSON completa.
+  - `displaySensorBuffer`: buffer circular de 500 puntos para el gráfico en pantalla.
+- Se implementó **throttle de publicación**: el `StateFlow` del sensor solo se actualiza cada 12 muestras (~4Hz visual), evitando recomposiciones excesivas de Compose que causaban congelamiento de gráficos.
+- Se utiliza `CopyOnWriteArrayList` para evitar `ConcurrentModificationException` desde el hilo del sensor.
+
+### Exportación Completa de Datos del Acelerómetro
+- El reporte JSON ahora incluye el campo `sensorHistory` con **todos** los datos brutos del acelerómetro (offset en ms, ejes X/Y/Z).
+- Esto permite reconstruir gráficos exactos en Python usando el script `generar_video_monitoreo.py`.
+
+### Corrección de Navegación en Alertas de Caída
+- Se cambió `FLAG_ACTIVITY_CLEAR_TOP` por `FLAG_ACTIVITY_SINGLE_TOP` en el intent de alerta.
+- Se agregó `android:launchMode="singleTop"` en el `AndroidManifest.xml`.
+- Se implementó `onNewIntent()` en `MainActivity` para manejar intents sin recrear la Activity.
+- Esto evita que la navegación se reinicie y saque al usuario de la pantalla de monitoreo cuando se detecta una caída.
+
+### Notificación Persistente
+- Se agregó `.setOngoing(true)` a la notificación del servicio para evitar que el usuario la descarte accidentalmente.
+
+---
+
+## 🐍 Script Python de Reconstrucción
+
+El archivo `generar_video_monitoreo.py` en la raíz del proyecto permite reconstruir visualmente los datos de una sesión de monitoreo exportada:
+
+### Requisitos
+- Python 3.8+
+- `matplotlib`, `numpy`
+- `ffmpeg` (opcional, para exportar como MP4; sin él se exporta como GIF)
+
+### Uso
+1. Copiar el archivo `datos-monitoreo-tensorflow-keras-9-clases.json` exportado desde la app al mismo directorio del script.
+2. Ejecutar:
+```bash
+python generar_video_monitoreo.py
+```
+3. Se generan dos archivos:
+   - `linea_tiempo_monitoreo.mp4` — Animación del gráfico de predicciones (9 clases)
+   - `acelerometro_monitoreo.mp4` — Animación del gráfico de acelerómetro (ejes X/Y/Z)
+
+---
+
+Autor: Hector (Licenciatura en Tecnologías Computacionales)  
+Última actualización: Junio 2026

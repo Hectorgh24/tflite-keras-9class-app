@@ -29,6 +29,7 @@ fun MainScreen(onOpenSettings: () -> Unit) {
     val currentPrediction by MonitoringState.currentPrediction.collectAsState()
     val sosActive by MonitoringState.sosActive.collectAsState()
     val countdown by MonitoringState.countdown.collectAsState()
+    val remainingSeconds by MonitoringState.remainingSeconds.collectAsState()
 
     var hasPermissions by remember { mutableStateOf(false) }
     var emergencyNumber by remember { mutableStateOf(sharedPrefs.getString("phone", "") ?: "") }
@@ -99,6 +100,7 @@ fun MainScreen(onOpenSettings: () -> Unit) {
                 isMonitoring = isMonitoring,
                 emergencyNumber = emergencyNumber,
                 currentPrediction = currentPrediction,
+                remainingSeconds = remainingSeconds,
                 onNumberChange = {
                     emergencyNumber = it
                     sharedPrefs.edit().putString("phone", it).apply()
