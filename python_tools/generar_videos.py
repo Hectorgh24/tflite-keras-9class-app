@@ -4,6 +4,12 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
 
+try:
+    import imageio_ffmpeg
+    plt.rcParams['animation.ffmpeg_path'] = imageio_ffmpeg.get_ffmpeg_exe()
+except ImportError:
+    pass
+
 # Lista de clases para el modelo de 9 clases
 CLASS_LIST = [
     "Caminando",
