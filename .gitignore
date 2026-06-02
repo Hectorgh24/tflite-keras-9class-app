@@ -13,3 +13,6 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Documentacion de contexto generada por IA (no rastrear)
+Monitoreo_y_visualizacion_de_graficos.md
