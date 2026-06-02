@@ -166,7 +166,7 @@ Mejoras implementadas para garantizar una operación confiable del servicio de m
 
 ### Exportación Completa de Datos del Acelerómetro
 - El reporte JSON ahora incluye el campo `sensorHistory` con **todos** los datos brutos del acelerómetro (offset en ms, ejes X/Y/Z).
-- Esto permite reconstruir gráficos exactos en Python usando el script `generar_video_monitoreo.py`.
+- Esto permite reconstruir gráficos exactos en Python usando la nueva herramienta gráfica.
 
 ### Corrección de Navegación en Alertas de Caída
 - Se cambió `FLAG_ACTIVITY_CLEAR_TOP` por `FLAG_ACTIVITY_SINGLE_TOP` en el intent de alerta.
@@ -179,24 +179,22 @@ Mejoras implementadas para garantizar una operación confiable del servicio de m
 
 ---
 
-## 🐍 Script Python de Reconstrucción
+## 🐍 Herramienta Python de Reconstrucción Visual
 
-El archivo `generar_video_monitoreo.py` en la raíz del proyecto permite reconstruir visualmente los datos de una sesión de monitoreo exportada:
+Se movieron los scripts de Python a una carpeta dedicada (`python_tools/`) para mantener limpio el código principal de la app Android. 
 
-### Requisitos
-- Python 3.8+
-- `matplotlib`, `numpy`
-- `ffmpeg` (opcional, para exportar como MP4; sin él se exporta como GIF)
+### Instalación y Uso Automático
+Esta herramienta revisa e instala automáticamente las dependencias necesarias (`matplotlib`, `numpy`).
 
-### Uso
-1. Copiar el archivo `datos-monitoreo-tensorflow-keras-9-clases.json` exportado desde la app al mismo directorio del script.
-2. Ejecutar:
-```bash
-python generar_video_monitoreo.py
-```
-3. Se generan dos archivos:
-   - `linea_tiempo_monitoreo.mp4` — Animación del gráfico de predicciones (9 clases)
-   - `acelerometro_monitoreo.mp4` — Animación del gráfico de acelerómetro (ejes X/Y/Z)
+1. Entra a la carpeta `python_tools/` que está en la raíz del proyecto.
+2. Ejecuta la interfaz gráfica haciendo doble clic sobre el archivo o usando la terminal:
+   ```bash
+   python interfaz_grafica.py
+   ```
+3. La interfaz creará automáticamente dos carpetas: `input_json` y `output_videos`.
+4. Coloca **solo tu archivo JSON** (ej. `datos-monitoreo-tensorflow-keras-9-clases.json`) en la carpeta `input_json/`.
+5. Presiona el botón verde "Generar Videos" en la interfaz.
+6. Los videos generados (`linea_tiempo_monitoreo.mp4` y `acelerometro_monitoreo.mp4`) aparecerán en la carpeta `output_videos/`.
 
 ---
 
