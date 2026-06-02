@@ -58,8 +58,8 @@ def generar_video_predicciones(data, output_path):
         spine.set_color('#2C2C2C')
 
     def init():
-        scatter_normal.set_offsets(list(zip([], [])))
-        scatter_fall.set_offsets(list(zip([], [])))
+        scatter_normal.set_offsets(np.empty((0, 2)))
+        scatter_fall.set_offsets(np.empty((0, 2)))
         time_line.set_xdata([0, 0])
         ax.set_xlim(0, max_window)
         return scatter_normal, scatter_fall, time_line
@@ -82,8 +82,13 @@ def generar_video_predicciones(data, output_path):
 
         if norm_points:
             scatter_normal.set_offsets(norm_points)
+        else:
+            scatter_normal.set_offsets(np.empty((0, 2)))
+            
         if fall_points:
             scatter_fall.set_offsets(fall_points)
+        else:
+            scatter_fall.set_offsets(np.empty((0, 2)))
 
         time_line.set_xdata([frame, frame])
 
