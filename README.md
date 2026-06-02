@@ -179,12 +179,17 @@ Mejoras implementadas para garantizar una operación confiable del servicio de m
 
 ---
 
-## 🐍 Herramienta Python de Reconstrucción Visual
+## 🐍 Herramienta Python de Reconstrucción Visual (JSON a MP4)
 
-Se movieron los scripts de Python a una carpeta dedicada (`python_tools/`) para mantener limpio el código principal de la app Android. 
+Se diseñó un módulo externo de Python (ubicado en la carpeta `python_tools/`) para leer el JSON exportado y generar animaciones precisas.
+
+### Características Técnicas de Generación de Video
+- **MP4 Nativo sin dependencias de sistema:** La herramienta utiliza el paquete `imageio-ffmpeg` para descargar un binario portátil de FFmpeg interno en Python. Al vincularlo con `matplotlib.rcParams['animation.ffmpeg_path']`, el usuario no necesita instalar FFmpeg manualmente en Windows ni tocar sus variables de entorno.
+- **Tolerancia a fallos (Fallback a GIF):** Si el motor principal llega a fallar al intentar generar el archivo `.mp4`, el sistema captura la excepción de forma silenciosa e invoca la librería `Pillow` para generar la animación en formato `.gif` de manera secundaria.
+- **Prevención de Bugs Gráficos:** Para sortear crasheos conocidos de Matplotlib (`too many indices for array`) al iniciar un scatter plot sin datos en el segundo cero, se inyectan matrices vacías matemáticas usando `np.empty((0, 2))`.
 
 ### Instalación y Uso Automático
-Esta herramienta revisa e instala automáticamente las dependencias necesarias (`matplotlib`, `numpy`).
+Esta herramienta contiene un auto-instalador: revisa e instala internamente las dependencias faltantes (`matplotlib`, `numpy`, `Pillow`, `imageio-ffmpeg`) sin que tengas que usar `pip` de forma manual.
 
 1. Entra a la carpeta `python_tools/` que está en la raíz del proyecto.
 2. Ejecuta la interfaz gráfica haciendo doble clic sobre el archivo o usando la terminal:
@@ -194,7 +199,7 @@ Esta herramienta revisa e instala automáticamente las dependencias necesarias (
 3. La interfaz creará automáticamente dos carpetas: `input_json` y `output_videos`.
 4. Coloca **solo tu archivo JSON** (ej. `datos-monitoreo-tensorflow-keras-9-clases.json`) en la carpeta `input_json/`.
 5. Presiona el botón verde "Generar Videos" en la interfaz.
-6. Los videos generados (`linea_tiempo_monitoreo.mp4` y `acelerometro_monitoreo.mp4`) aparecerán en la carpeta `output_videos/`.
+6. Los videos MP4 generados (`linea_tiempo_monitoreo.mp4` y `acelerometro_monitoreo.mp4`) aparecerán en la carpeta `output_videos/`.
 
 ---
 
