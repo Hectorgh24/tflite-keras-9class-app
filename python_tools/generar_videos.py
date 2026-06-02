@@ -166,9 +166,9 @@ def generar_video_acelerometro(data, output_path):
 def _guardar_animacion(ani, output_path):
     try:
         ani.save(output_path, writer='ffmpeg', fps=1)
-    except Exception as e:
+    except Exception as e1:
         output_gif = output_path.replace(".mp4", ".gif")
         try:
             ani.save(output_gif, writer='pillow', fps=1)
-        except Exception:
-            raise Exception("No se pudo guardar como MP4 ni como GIF. Verifica tus dependencias.")
+        except Exception as e2:
+            raise Exception(f"Fallo MP4: {str(e1)}\n\nFallo GIF: {str(e2)}\n\nAsegurate de que Pillow este instalado.")

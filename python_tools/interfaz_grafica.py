@@ -7,7 +7,7 @@ from tkinter import messagebox
 
 def check_and_install_dependencies():
     """Verifica si las librerias estan instaladas, de lo contrario las instala automaticamente."""
-    required = {'matplotlib', 'numpy'}
+    required = {'matplotlib', 'numpy', 'Pillow'}
     missing = []
     
     try:
@@ -19,6 +19,11 @@ def check_and_install_dependencies():
         import numpy
     except ImportError:
         missing.append('numpy')
+        
+    try:
+        import PIL
+    except ImportError:
+        missing.append('Pillow')
         
     if missing:
         print(f"Faltan dependencias: {missing}. Instalando automaticamente...")
