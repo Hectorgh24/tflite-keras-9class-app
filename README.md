@@ -157,12 +157,18 @@ Mejoras implementadas para garantizar una operación confiable del servicio de m
 - Timeout de seguridad de 3 minutos para evitar fugas de recursos.
 - Se agregó el permiso `WAKE_LOCK` al `AndroidManifest.xml`.
 
-### Optimización de Gráficos en Tiempo Real (Anti-Congelamiento)
+### Optimización de Gráficos en Tiempo Real y UX
 - Se separaron los datos del sensor en dos buffers:
   - `fullSensorHistory`: almacena **todas** las muestras para la exportación JSON completa.
   - `displaySensorBuffer`: buffer circular de 500 puntos para el gráfico en pantalla.
 - Se implementó **throttle de publicación**: el `StateFlow` del sensor solo se actualiza cada 12 muestras (~4Hz visual), evitando recomposiciones excesivas de Compose que causaban congelamiento de gráficos.
 - Se utiliza `CopyOnWriteArrayList` para evitar `ConcurrentModificationException` desde el hilo del sensor.
+- Se implementó **scroll horizontal interactivo** en ambos gráficos (`SensorChart` y `TimelineChart`), asignando un ancho dinámico proporcional a la duración (40dp por segundo) para evitar la superposición de etiquetas.
+- El gráfico de línea de tiempo ahora visualiza el historial completo de los **120 segundos** de la sesión (antes limitado a 60s).
+- Se añadió **auto-scroll en tiempo real** para seguir el flujo de datos y líneas de cuadrícula ajustadas a intervalos precisos de **1 segundo**.
+
+### Ventana Deslizante (Sliding Window) para Inferencia Continua
+- En el `SensorHandler`, en lugar de vaciar completamente el búfer tras cada inferencia (151 muestras), ahora se aplica un desplazamiento temporal: solo se descartan las 50 muestras más antiguas (equivalente a 1 segundo) y se retienen las 101 más recientes. Esto genera ventanas de datos superpuestas, eliminando los "puntos ciegos" temporales y aumentando la precisión en la detección de caídas a lo largo del tiempo.
 
 ### Exportación Completa de Datos del Acelerómetro
 - El reporte JSON ahora incluye el campo `sensorHistory` con **todos** los datos brutos del acelerómetro (offset en ms, ejes X/Y/Z).
@@ -185,8 +191,9 @@ Se diseñó un módulo externo de Python (ubicado en la carpeta `python_tools/`)
 
 ### Características Técnicas de Generación de Video
 - **MP4 Nativo sin dependencias de sistema:** La herramienta utiliza el paquete `imageio-ffmpeg` para descargar un binario portátil de FFmpeg interno en Python. Al vincularlo con `matplotlib.rcParams['animation.ffmpeg_path']`, el usuario no necesita instalar FFmpeg manualmente en Windows ni tocar sus variables de entorno.
-- **Tolerancia a fallos (Fallback a GIF):** Si el motor principal llega a fallar al intentar generar el archivo `.mp4`, el sistema captura la excepción de forma silenciosa e invoca la librería `Pillow` para generar la animación en formato `.gif` de manera secundaria.
-- **Prevención de Bugs Gráficos:** Para sortear crasheos conocidos de Matplotlib (`too many indices for array`) al iniciar un scatter plot sin datos en el segundo cero, se inyectan matrices vacías matemáticas usando `np.empty((0, 2))`.
+- **Tolerancia a fallos (Fallback a GIF):** Si el motor principal falla al intentar generar el archivo `.mp4`, el sistema captura la excepción silenciosamente e invoca `Pillow` para generar una animación `.gif` de respaldo con el cálculo correcto de FPS.
+- **Prevención de Bugs Gráficos:** Para sortear crasheos de Matplotlib (`too many indices for array`) al iniciar el scatter plot en el segundo cero, se inyectan matrices vacías matemáticas mediante `np.empty((0, 2))`.
+- **Interfaz Fluida (Multi-Hilo) y Alta Resolución:** Se habilitó *DPI Awareness* en Windows para evitar textos borrosos. La generación de animaciones (que puede demorar varios minutos) fue aislada en un hilo secundario para evitar congelamientos ("No Responde") en la ventana de Tkinter, proveyendo retroalimentación textual secuencial durante el progreso.
 
 ### Instalación y Uso Automático
 Esta herramienta contiene un auto-instalador: revisa e instala internamente las dependencias faltantes (`matplotlib`, `numpy`, `Pillow`, `imageio-ffmpeg`) sin que tengas que usar `pip` de forma manual.

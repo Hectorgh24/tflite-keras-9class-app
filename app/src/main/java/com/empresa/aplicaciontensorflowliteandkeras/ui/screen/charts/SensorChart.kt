@@ -2,7 +2,9 @@ package com.empresa.aplicaciontensorflowliteandkeras.ui.screen.charts
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -13,6 +15,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,11 +81,31 @@ fun SensorChart(
         val yMin = -25f
         val yMax = 25f
 
-        Canvas(
+        val scrollState = rememberScrollState()
+        val density = LocalDensity.current
+
+        if (sensorHistory.size < 2) return
+
+        val firstTime = sensorHistory.first().timeOffsetMillis / 1000f
+        val lastTime = sensorHistory.last().timeOffsetMillis / 1000f
+        val visibleRange = maxOf(lastTime - firstTime, 1f)
+
+        // Anchura dinámica para permitir scroll: 40dp por cada segundo
+        val chartWidthDp = with(density) {
+            maxOf(600.dp, (visibleRange * 40).dp)
+        }
+
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(200.dp)
+                .horizontalScroll(scrollState)
         ) {
+            Canvas(
+                modifier = Modifier
+                    .width(chartWidthDp)
+                    .fillMaxHeight()
+            ) {
             val chartWidth = size.width
             val chartHeight = size.height
             val yRange = yMax - yMin
@@ -115,16 +138,11 @@ fun SensorChart(
                 )
             }
 
-            if (sensorHistory.size < 2) return@Canvas
+            // (La validación de size y cálculos de firstTime/lastTime se movieron afuera del Canvas)
 
-            // Calcular el rango de tiempo visible (últimos ~10 segundos)
-            val firstTime = sensorHistory.first().timeOffsetMillis / 1000f
-            val lastTime = sensorHistory.last().timeOffsetMillis / 1000f
-            val visibleRange = maxOf(lastTime - firstTime, 1f)
-
-            // Líneas de cuadrícula verticales (cada 2 segundos)
+            // Líneas de cuadrícula verticales (cada 1 segundo)
             val timeStart = firstTime
-            var t = (timeStart.toInt() / 2 * 2).toFloat()
+            var t = (timeStart.toInt() / 1 * 1).toFloat()
             while (t <= lastTime) {
                 if (t >= firstTime) {
                     val xPos = leftMargin + ((t - firstTime) / visibleRange) * drawableWidth
@@ -145,7 +163,7 @@ fun SensorChart(
                         }
                     )
                 }
-                t += 2f
+                t += 1f
             }
 
             // Función para dibujar una línea de datos
@@ -176,7 +194,13 @@ fun SensorChart(
             drawDataLine({ it.y }, colorY)
             drawDataLine({ it.z }, colorZ)
         }
+
+        // Auto-scroll al final para seguir el tiempo real
+        LaunchedEffect(sensorHistory.size) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
     }
+}
 }
 
 /**

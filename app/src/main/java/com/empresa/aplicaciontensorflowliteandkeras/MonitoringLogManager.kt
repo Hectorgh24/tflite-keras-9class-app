@@ -13,7 +13,7 @@ import android.provider.MediaStore
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
-import java.util.concurrent.CopyOnWriteArrayList
+import java.util.*
 
 /**
  * Evento de predicción individual para el gráfico de línea de tiempo.
@@ -148,16 +148,15 @@ object MonitoringLogManager {
 
     /**
      * Lista completa de datos del sensor para guardar en el JSON final.
-     * Usa CopyOnWriteArrayList para evitar ConcurrentModificationException desde
-     * el hilo del sensor.
+     * Usa mutableListOf con sincronización manual para evitar pérdida de rendimiento y ConcurrentModificationException.
      */
-    private val fullSensorHistory = CopyOnWriteArrayList<SensorEventData>()
+    private val fullSensorHistory = mutableListOf<SensorEventData>()
 
     /**
      * Buffer circular para la visualización en tiempo real del gráfico.
-     * Solo los últimos 500 puntos (~10 segundos a 50Hz).
+     * Soporta los 120 segundos completos (6000 puntos a 50Hz).
      */
-    private val displaySensorBuffer = CopyOnWriteArrayList<SensorEventData>()
+    private val displaySensorBuffer = mutableListOf<SensorEventData>()
 
     /** Contador de throttle para publicar al StateFlow solo cada N muestras (~4Hz visual) */
     private var sensorSampleCount = 0
@@ -165,8 +164,12 @@ object MonitoringLogManager {
 
     fun startSession(context: Context, emergencyNumber: String) {
         // Limpiar buffers de sesión anterior
-        fullSensorHistory.clear()
-        displaySensorBuffer.clear()
+        synchronized(fullSensorHistory) {
+            fullSensorHistory.clear()
+        }
+        synchronized(displaySensorBuffer) {
+            displaySensorBuffer.clear()
+        }
         sensorSampleCount = 0
 
         val session = MonitoringSessionLog(
@@ -208,19 +211,24 @@ object MonitoringLogManager {
             val data = SensorEventData(offset, x, y, z)
 
             // Guardar en historial completo (sin límite, para exportación a JSON/Python)
-            fullSensorHistory.add(data)
+            synchronized(fullSensorHistory) {
+                fullSensorHistory.add(data)
+            }
 
             // Guardar en buffer circular para gráfico en tiempo real
-            displaySensorBuffer.add(data)
-            if (displaySensorBuffer.size > 500) {
-                displaySensorBuffer.removeAt(0)
+            synchronized(displaySensorBuffer) {
+                displaySensorBuffer.add(data)
+                if (displaySensorBuffer.size > 6000) {
+                    displaySensorBuffer.removeAt(0)
+                }
             }
 
             // Throttle: publicar al StateFlow solo cada N muestras para evitar congelamiento
             sensorSampleCount++
             if (sensorSampleCount >= PUBLISH_EVERY_N) {
                 sensorSampleCount = 0
-                MonitoringState.sensorHistory.value = ArrayList(displaySensorBuffer)
+                val snapshot = synchronized(displaySensorBuffer) { ArrayList(displaySensorBuffer) }
+                MonitoringState.sensorHistory.value = snapshot
             }
         }
     }
@@ -250,7 +258,9 @@ object MonitoringLogManager {
         _currentSession.value?.let {
             // Copiar los datos completos del sensor al log de sesión antes de guardar
             it.sensorHistory.clear()
-            it.sensorHistory.addAll(fullSensorHistory)
+            synchronized(fullSensorHistory) {
+                it.sensorHistory.addAll(fullSensorHistory)
+            }
             _currentSession.value = it.copy(sessionEndMillis = System.currentTimeMillis())
             saveCurrentSession(context)
         }
@@ -274,8 +284,10 @@ object MonitoringLogManager {
         val session = _currentSession.value ?: loadLastSession(context)
         return session?.let {
             // Si la sesión activa no tiene datos de sensor copiados aún, inyectarlos
-            if (it.sensorHistory.isEmpty() && fullSensorHistory.isNotEmpty()) {
-                it.sensorHistory.addAll(fullSensorHistory)
+            synchronized(fullSensorHistory) {
+                if (it.sensorHistory.isEmpty() && fullSensorHistory.isNotEmpty()) {
+                    it.sensorHistory.addAll(fullSensorHistory)
+                }
             }
 
             val jsonContent = it.toJson().toString(2)

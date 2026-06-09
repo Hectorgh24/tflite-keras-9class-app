@@ -52,7 +52,6 @@ class SensorHandler(
 
             // Cuando llenamos la ventana de 151 muestras
             if (currentIndex >= WINDOW_SIZE) {
-                currentIndex = 0
                 val flatBuffer = FloatArray(TOTAL_FEATURES)
 
                 // IMPORTANTE: El modelo espera formato [X...X, Y...Y, Z...Z]
@@ -62,6 +61,15 @@ class SensorHandler(
                 System.arraycopy(zBuffer, 0, flatBuffer, WINDOW_SIZE * 2, WINDOW_SIZE)
 
                 onWindowReady(flatBuffer)
+
+                // Desplazamiento (Sliding Window): eliminar las 50 muestras más antiguas (1 segundo a 50Hz)
+                val shiftAmount = 50
+                val remaining = WINDOW_SIZE - shiftAmount
+                System.arraycopy(xBuffer, shiftAmount, xBuffer, 0, remaining)
+                System.arraycopy(yBuffer, shiftAmount, yBuffer, 0, remaining)
+                System.arraycopy(zBuffer, shiftAmount, zBuffer, 0, remaining)
+                
+                currentIndex = remaining
             }
         }
     }

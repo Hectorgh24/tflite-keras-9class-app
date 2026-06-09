@@ -1,7 +1,11 @@
 import json
 import os
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import matplotlib.ticker as ticker
+from matplotlib.animation import FFMpegWriter
 import numpy as np
 
 try:
@@ -10,7 +14,7 @@ try:
 except ImportError:
     pass
 
-# Lista de clases para el modelo de 9 clases
+# Lista de clases para el modelo de 17 clases
 CLASS_LIST = [
     "Caminando",
     "Caída frontal",
@@ -33,20 +37,23 @@ def generar_video_predicciones(data, output_path):
         raise ValueError("El historial de predicciones está vacío.")
 
     duration = data.get("durationSeconds", 30)
-    fig, ax = plt.subplots(figsize=(10, 5), dpi=100)
+    fps = 30
+    fig, ax = plt.subplots(figsize=(16, 9), dpi=120)
     y_positions = list(range(len(CLASS_LIST)))
-    max_window = 60
+    max_window = 15  # Reducir la ventana a 15 segundos para dar mayor espacio visual entre los numeros de 1 segundo
     
     fig.patch.set_facecolor('#1E1E1E')
     ax.set_facecolor('#121212')
     
     ax.set_yticks(y_positions)
-    ax.set_yticklabels(CLASS_LIST, color='#E0E0E0', fontsize=9)
+    ax.set_yticklabels(CLASS_LIST, color='#E0E0E0', fontsize=8)
     ax.tick_params(colors='#E0E0E0')
     
     ax.set_title("Línea de Tiempo de Actividades y Caídas (9 Clases)", color='#FFFFFF', fontsize=12, fontweight='bold', pad=15)
     ax.set_xlabel("Tiempo (segundos)", color='#E0E0E0', fontsize=10, labelpad=10)
-    ax.grid(True, which='both', color='#2C2C2C', linestyle='--', linewidth=0.5)
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
+    ax.tick_params(axis='x', rotation=45) # Tambien las rotamos ligeramente por si llegan a decenas/centenas
+    ax.grid(True, which='major', color='#2C2C2C', linestyle='--', linewidth=0.5)
 
     scatter_normal = ax.scatter([], [], color='#00E5FF', s=50, label='Actividades normales', edgecolors='none')
     scatter_fall = ax.scatter([], [], color='#FF1744', s=60, label='Caídas detectadas', edgecolors='none')
@@ -65,7 +72,8 @@ def generar_video_predicciones(data, output_path):
         return scatter_normal, scatter_fall, time_line
 
     def update(frame):
-        current_predictions = [p for p in history if p['timeSeconds'] <= frame]
+        current_time = frame / fps
+        current_predictions = [p for p in history if p['timeSeconds'] <= current_time]
         norm_points = []
         fall_points = []
         
@@ -74,7 +82,7 @@ def generar_video_predicciones(data, output_path):
             class_name = p['className']
             if class_name in CLASS_LIST:
                 y_idx = CLASS_LIST.index(class_name)
-                # En 9 clases, los índices >= 1 son caídas
+                # En 17 clases, los índices >= 1 son caídas
                 if y_idx >= 1:
                     fall_points.append((t, y_idx))
                 else:
@@ -90,19 +98,19 @@ def generar_video_predicciones(data, output_path):
         else:
             scatter_fall.set_offsets(np.empty((0, 2)))
 
-        time_line.set_xdata([frame, frame])
+        time_line.set_xdata([current_time, current_time])
 
-        if frame > max_window:
-            ax.set_xlim(frame - max_window, frame)
+        if current_time > max_window:
+            ax.set_xlim(current_time - max_window, current_time)
         else:
             ax.set_xlim(0, max_window)
 
         return scatter_normal, scatter_fall, time_line
 
-    frames_total = int(duration) + 2
-    ani = animation.FuncAnimation(fig, update, frames=frames_total, init_func=init, blit=False, interval=1000)
+    frames_total = int(duration * fps) + (2 * fps)
+    ani = animation.FuncAnimation(fig, update, frames=frames_total, init_func=init, blit=False, interval=1000 // fps)
 
-    _guardar_animacion(ani, output_path)
+    _guardar_animacion(ani, output_path, fps)
     plt.close(fig)
 
 def generar_video_acelerometro(data, output_path):
@@ -111,13 +119,14 @@ def generar_video_acelerometro(data, output_path):
         raise ValueError("El historial del sensor está vacío.")
 
     duration = data.get("durationSeconds", 30)
+    fps = 30
     times_ms = np.array([d["timeOffsetMillis"] for d in sensor_data], dtype=float)
     times_s = times_ms / 1000.0
     x_vals = np.array([d["x"] for d in sensor_data], dtype=float)
     y_vals = np.array([d["y"] for d in sensor_data], dtype=float)
     z_vals = np.array([d["z"] for d in sensor_data], dtype=float)
 
-    fig, ax = plt.subplots(figsize=(10, 5), dpi=100)
+    fig, ax = plt.subplots(figsize=(16, 9), dpi=120)
     fig.patch.set_facecolor('#1E1E1E')
     ax.set_facecolor('#121212')
 
@@ -125,8 +134,9 @@ def generar_video_acelerometro(data, output_path):
     ax.set_xlabel("Tiempo (segundos)", color='#E0E0E0', fontsize=10, labelpad=10)
     ax.set_ylabel("Aceleración (m/s²)", color='#E0E0E0', fontsize=10, labelpad=10)
     ax.set_ylim(-25, 25)
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
     ax.tick_params(colors='#E0E0E0')
-    ax.grid(True, color='#2C2C2C', linestyle='--', linewidth=0.5)
+    ax.grid(True, which='major', color='#2C2C2C', linestyle='--', linewidth=0.5)
 
     for spine in ax.spines.values():
         spine.set_color('#2C2C2C')
@@ -146,7 +156,7 @@ def generar_video_acelerometro(data, output_path):
         return line_x, line_y, line_z
 
     def update(frame):
-        current_time = float(frame)
+        current_time = frame / fps
         mask = times_s <= current_time
         t_vis = times_s[mask]
         x_vis = x_vals[mask]
@@ -168,18 +178,40 @@ def generar_video_acelerometro(data, output_path):
         line_z.set_data(t_vis, z_vis)
         return line_x, line_y, line_z
 
-    frames_total = int(duration) + 2
-    ani = animation.FuncAnimation(fig, update, frames=frames_total, init_func=init, blit=False, interval=1000)
+    frames_total = int(duration * fps) + (2 * fps)
+    ani = animation.FuncAnimation(fig, update, frames=frames_total, init_func=init, blit=False, interval=1000 // fps)
 
-    _guardar_animacion(ani, output_path)
+    _guardar_animacion(ani, output_path, fps)
     plt.close(fig)
 
-def _guardar_animacion(ani, output_path):
+def _guardar_animacion(ani, output_path, fps_val):
+    # Intentar primero con aceleración por hardware (NVIDIA GPU - NVENC) para mayor velocidad
     try:
-        ani.save(output_path, writer='ffmpeg', fps=1)
+        writer_nvenc = FFMpegWriter(
+            fps=fps_val,
+            bitrate=8000,
+            extra_args=['-vcodec', 'h264_nvenc', '-pix_fmt', 'yuv420p', '-preset', 'fast']
+        )
+        ani.save(output_path, writer=writer_nvenc)
+        print("Video guardado usando aceleracion de hardware (NVENC).")
+        return
+    except Exception as e_nvenc:
+        print(f"No se pudo usar NVENC (Posiblemente no hay GPU NVIDIA): {e_nvenc}. Usando CPU...")
+        pass # Continuar con el fallback a CPU
+
+    # Fallback a CPU (libx264) optimizado con 'ultrafast' para reducir drasticamente el tiempo de procesamiento
+    try:
+        writer_cpu = FFMpegWriter(
+            fps=fps_val,
+            bitrate=8000,
+            extra_args=['-vcodec', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'ultrafast', '-profile:v', 'high', '-level', '4.0']
+        )
+        ani.save(output_path, writer=writer_cpu)
+        print("Video guardado usando CPU (libx264 ultrafast).")
     except Exception as e1:
+        # Fallback a GIF si FFmpeg no esta disponible
         output_gif = output_path.replace(".mp4", ".gif")
         try:
-            ani.save(output_gif, writer='pillow', fps=1)
+            ani.save(output_gif, writer='pillow', fps=fps_val)
         except Exception as e2:
-            raise Exception(f"Fallo MP4: {str(e1)}\n\nFallo GIF: {str(e2)}\n\nAsegurate de que Pillow este instalado.")
+            raise Exception(f"Fallo NVENC/MP4: {str(e1)}\n\nFallo GIF: {str(e2)}\n\nAsegurate de que Pillow este instalado.")

@@ -76,8 +76,8 @@ fun TimelineChart(
             return
         }
 
-        // Mostrar solo los últimos 60 segundos para evitar que el Canvas exceda el tamaño máximo de textura de Android
-        val maxTimeWindow = 60f
+        // Mostrar todo el historial de los 120 segundos
+        val maxTimeWindow = 120f
         val currentTime = maxOf(30f, durationSeconds.toFloat())
         val minTime = maxOf(0f, currentTime - maxTimeWindow)
         val maxTime = currentTime + 2f
@@ -85,9 +85,9 @@ fun TimelineChart(
         val scrollState = rememberScrollState()
         val density = LocalDensity.current
 
-        // Anchura fija calculada sobre la ventana visible, nunca crecerá infinitamente
+        // Anchura fija calculada sobre la ventana visible, dando un buen espacio para leer las etiquetas (40dp por segundo)
         val chartWidthDp = with(density) {
-            maxOf(600.dp, ((maxTime - minTime) * 20).dp) // 20dp por segundo
+            maxOf(600.dp, ((maxTime - minTime) * 40).dp)
         }
 
         Row(modifier = Modifier.fillMaxWidth()) {
@@ -138,11 +138,11 @@ fun TimelineChart(
                         )
                     }
 
-                    // Líneas de cuadrícula verticales cada 5 segundos dentro de la ventana de tiempo
+                    // Líneas de cuadrícula verticales cada 1 segundo dentro de la ventana de tiempo
                     val timeRange = maxTime - minTime
                     val xStep = chartWidth / timeRange
 
-                    var t = (minTime / 5f).toInt() * 5f
+                    var t = (minTime / 1f).toInt() * 1f
                     while (t <= maxTime) {
                         if (t >= minTime) {
                             val x = (t - minTime) * xStep
@@ -165,7 +165,7 @@ fun TimelineChart(
                                 }
                             )
                         }
-                        t += 5f
+                        t += 1f
                     }
 
                     // Dibujar puntos de predicción
