@@ -222,3 +222,10 @@ Esta aplicación fue modificada para operar simultáneamente con otros 3 modelos
 2. **Permiso de Notificaciones en Tiempo de Ejecución**: Inyección del permiso POST_NOTIFICATIONS en el manifiesto, solucionando bloqueos al instanciar el servicio en Android 13+.
 3. **Inyección Dinámica de Ciclo de Vida**: El MainActivity.kt fue escaneado e intervenido dinámicamente para insertar el hook de startForegroundService en el onResume, logrando bypass completo de la restricción del acelerómetro.
 4. **Sincronización UDP**: Integración final para escuchar comandos UDP y asegurar que el log de JSON comience y termine coordinado con el orquestador general y la grabación de la cámara.
+
+### ⏱️ Rendimiento de Generación de Videos (Aceleración AMF)
+Durante las pruebas de campo en un equipo HP Victus (AMD Radeon RX 6550M), el renderizado de gráficos de la telemetría tardó lo siguiente:
+* **Video de Línea de Tiempo (Predicciones)**: ~5 minutos (24.11 MB)
+* **Video de Acelerómetro (Ejes X,Y,Z)**: ~4 minutos (35.73 MB)
+* **Tiempo Total por Ciclo (120s)**: ~9 minutos.
+> Nota: Al ser una arquitectura TFLite de 9 clases extremadamente optimizada, el dibujado de sus datos en Matplotlib fue significativamente más veloz que en las arquitecturas de 17 clases.
