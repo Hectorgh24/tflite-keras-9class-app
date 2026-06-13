@@ -212,3 +212,13 @@ Esta herramienta contiene un auto-instalador: revisa e instala internamente las 
 
 Autor: Hector (Licenciatura en Tecnologías Computacionales)  
 Última actualización: Junio 2026
+
+
+## 🔬 Integración con Orquestador Multimodelo (Actualización)
+Esta aplicación fue modificada para operar simultáneamente con otros 3 modelos de Inteligencia Artificial en un solo dispositivo (Poco F7) durante protocolos de investigación científica.
+
+### Mejoras Críticas Implementadas:
+1. **Restauración y START_STICKY (DummyForegroundService)**: Se inyectó y configuró el servicio con notificaciones de alta prioridad para garantizar visibilidad, y se activó el retorno START_STICKY para evitar bloqueos.
+2. **Permiso de Notificaciones en Tiempo de Ejecución**: Inyección del permiso POST_NOTIFICATIONS en el manifiesto, solucionando bloqueos al instanciar el servicio en Android 13+.
+3. **Inyección Dinámica de Ciclo de Vida**: El MainActivity.kt fue escaneado e intervenido dinámicamente para insertar el hook de startForegroundService en el onResume, logrando bypass completo de la restricción del acelerómetro.
+4. **Sincronización UDP**: Integración final para escuchar comandos UDP y asegurar que el log de JSON comience y termine coordinado con el orquestador general y la grabación de la cámara.
