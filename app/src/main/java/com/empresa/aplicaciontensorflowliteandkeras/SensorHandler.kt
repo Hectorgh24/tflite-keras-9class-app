@@ -12,7 +12,7 @@ class SensorHandler(
     private val onWindowReady: (FloatArray) -> Unit
 ) : SensorEventListener {
 
-    private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    private val sensorManager = context.applicationContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
     companion object {

@@ -13,7 +13,6 @@ import android.provider.MediaStore
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
-import java.util.*
 
 /**
  * Evento de predicción individual para el gráfico de línea de tiempo.
@@ -22,6 +21,11 @@ import java.util.*
 data class PredictionEvent(
     val timeSeconds: Int,
     val className: String
+)
+
+data class MemoryEvent(
+    val timeSeconds: Int,
+    val ramMB: Float
 )
 
 /**
@@ -44,6 +48,7 @@ data class MonitoringSessionLog(
     val emergencyNumber: String = "",
     val currentPrediction: String = "Inactivo",
     val predictionHistory: MutableList<PredictionEvent> = mutableListOf(),
+    val memoryHistory: MutableList<MemoryEvent> = mutableListOf(),
     @Transient val sensorHistory: MutableList<SensorEventData> = mutableListOf()
 ) {
     val durationSeconds: Long
@@ -74,6 +79,15 @@ data class MonitoringSessionLog(
                 historyArray.put(eventObj)
             }
             put("predictionHistory", historyArray)
+
+            val memoryArray = JSONArray()
+            memoryHistory.forEach { event ->
+                val eventObj = JSONObject()
+                eventObj.put("timeSeconds", event.timeSeconds)
+                eventObj.put("ramMB", event.ramMB.toDouble())
+                memoryArray.put(eventObj)
+            }
+            put("memoryHistory", memoryArray)
 
             // Incluir datos completos del acelerómetro para reconstrucción de gráfico por Python
             val sensorArray = JSONArray()
@@ -133,6 +147,17 @@ data class MonitoringSessionLog(
                         }
                     }
                 },
+                memoryHistory = mutableListOf<MemoryEvent>().apply {
+                    val arr = json.optJSONArray("memoryHistory")
+                    if (arr != null) {
+                        for (i in 0 until arr.length()) {
+                            val obj = arr.optJSONObject(i)
+                            if (obj != null) {
+                                add(MemoryEvent(obj.optInt("timeSeconds"), obj.optDouble("ramMB", 0.0).toFloat()))
+                            }
+                        }
+                    }
+                },
                 sensorHistory = sensorList
             )
         }
@@ -144,7 +169,7 @@ object MonitoringLogManager {
     val currentSession = _currentSession.asStateFlow()
 
     private const val LOG_FILE_NAME = "monitoring_log.json"
-    private const val EXPORT_FILE_NAME = "datos-monitoreo-tensorflow-keras-9-clases.json"
+    private const val EXPORT_FILE_NAME_PREFIX = "datos-monitoreo-tensorflow-keras-9-clases"
 
     /**
      * Lista completa de datos del sensor para guardar en el JSON final.
@@ -157,6 +182,10 @@ object MonitoringLogManager {
      * Soporta los 120 segundos completos (6000 puntos a 50Hz).
      */
     private val displaySensorBuffer = mutableListOf<SensorEventData>()
+
+    /** Ultima clase predicha, usada para duplicar en caso de que la inferencia sea lenta */
+    @Volatile
+    private var lastClassName: String = "walk"
 
     /** Contador de throttle para publicar al StateFlow solo cada N muestras (~4Hz visual) */
     private var sensorSampleCount = 0
@@ -187,7 +216,7 @@ object MonitoringLogManager {
     fun recordWindow(context: Context) {
         _currentSession.value?.let {
             _currentSession.value = it.copy(windowsProcessed = it.windowsProcessed + 1)
-            saveCurrentSession(context)
+            saveCurrentSessionAsync(context)
         }
     }
 
@@ -246,11 +275,28 @@ object MonitoringLogManager {
      */
     fun updatePrediction(context: Context, prediction: String, className: String) {
         _currentSession.value?.let {
-            it.predictionHistory.add(PredictionEvent(it.durationSeconds.toInt(), className))
+            lastClassName = className
+            val timeSec = it.durationSeconds.toInt()
+            it.predictionHistory.add(PredictionEvent(timeSec, className))
+            it.memoryHistory.add(MemoryEvent(timeSec, android.os.Debug.getPss() / 1024f))
             _currentSession.value = it.copy(currentPrediction = prediction)
             // Publicar snapshot al StateFlow para que Compose lo observe
             MonitoringState.predictionHistory.value = ArrayList(it.predictionHistory)
-            saveCurrentSession(context)
+            saveCurrentSessionAsync(context)
+        }
+    }
+
+    /**
+     * Registra una prediccion duplicada usando la ultima clase conocida.
+     * Asegura intervalos exactos de 1 segundo en el JSON aunque la inferencia tarde mas de 1s.
+     */
+    fun recordDuplicatePrediction(context: Context) {
+        _currentSession.value?.let {
+            val timeSec = it.durationSeconds.toInt()
+            it.predictionHistory.add(PredictionEvent(timeSec, lastClassName))
+            it.memoryHistory.add(MemoryEvent(timeSec, android.os.Debug.getPss() / 1024f))
+            MonitoringState.predictionHistory.value = ArrayList(it.predictionHistory)
+            saveCurrentSessionAsync(context)
         }
     }
 
@@ -263,6 +309,7 @@ object MonitoringLogManager {
             }
             _currentSession.value = it.copy(sessionEndMillis = System.currentTimeMillis())
             saveCurrentSession(context)
+            exportReport(context) // EXPORTACION AUTOMATICA
         }
     }
 
@@ -291,11 +338,13 @@ object MonitoringLogManager {
             }
 
             val jsonContent = it.toJson().toString(2)
+            val timestampString = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val exportFileName = "${EXPORT_FILE_NAME_PREFIX}_${timestampString}.json"
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver = context.contentResolver
                 val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
                 val values = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, EXPORT_FILE_NAME)
+                    put(MediaStore.Downloads.DISPLAY_NAME, exportFileName)
                     put(MediaStore.Downloads.MIME_TYPE, "application/json")
                     put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                     put(MediaStore.Downloads.IS_PENDING, 1)
@@ -315,17 +364,49 @@ object MonitoringLogManager {
                 if (!downloadsDir.exists()) {
                     downloadsDir.mkdirs()
                 }
-                val exportFile = File(downloadsDir, EXPORT_FILE_NAME)
+                val exportFile = File(downloadsDir, exportFileName)
                 exportFile.writeText(jsonContent)
                 exportFile.absolutePath
             }
         }
     }
 
+    @Volatile
+    private var isSaving = false
+    private val ioExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    private fun saveCurrentSessionAsync(context: Context) {
+        if (isSaving) return
+        val session = _currentSession.value ?: return
+        val sensorSnapshot: List<SensorEventData>
+        synchronized(fullSensorHistory) {
+            sensorSnapshot = ArrayList(fullSensorHistory)
+        }
+        val jsonString = try {
+            session.sensorHistory.clear()
+            session.sensorHistory.addAll(sensorSnapshot)
+            session.toJson().toString(2)
+        } catch (_: Exception) { return }
+        isSaving = true
+        ioExecutor.execute {
+            try {
+                val file = File(context.filesDir, LOG_FILE_NAME)
+                file.writeText(jsonString)
+            } catch (_: Exception) {
+            } finally {
+                isSaving = false
+            }
+        }
+    }
+
     private fun saveCurrentSession(context: Context) {
-        _currentSession.value?.let {
+        _currentSession.value?.let { session ->
+            synchronized(fullSensorHistory) {
+                session.sensorHistory.clear()
+                session.sensorHistory.addAll(fullSensorHistory)
+            }
             val file = File(context.filesDir, LOG_FILE_NAME)
-            file.writeText(it.toJson().toString(2))
+            file.writeText(session.toJson().toString(2))
         }
     }
 }

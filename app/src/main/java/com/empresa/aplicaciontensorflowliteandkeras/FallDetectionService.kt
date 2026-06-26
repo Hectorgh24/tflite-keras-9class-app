@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class FallDetectionService : Service() {
 
@@ -22,6 +23,9 @@ class FallDetectionService : Service() {
     private lateinit var inferenceExecutor: ExecutorService
     @Volatile
     private var classifierReady = false
+
+    /** Flag atomico para evitar saturar el executor con tareas de inferencia */
+    private val inferenceInProgress = AtomicBoolean(false)
 
     /** WakeLock parcial para mantener la CPU activa incluso con pantalla apagada */
     private var wakeLock: PowerManager.WakeLock? = null
@@ -57,12 +61,21 @@ class FallDetectionService : Service() {
         }
 
         sensorHandler = SensorHandler(this) { windowData ->
-            inferenceExecutor.execute {
-                try {
-                    processInference(windowData)
-                } catch (e: Exception) {
-                    Log.e("FallService", "Fallo crítico al procesar la ventana de datos del sensor", e)
+            // Solo lanzar inferencia si no hay una en progreso.
+            // Si el motor esta ocupado, registrar prediccion duplicada para mantener intervalos exactos de 1s.
+            if (inferenceInProgress.compareAndSet(false, true)) {
+                inferenceExecutor.execute {
+                    try {
+                        processInference(windowData)
+                    } catch (e: Exception) {
+                        Log.e("FallService", "Fallo critico al procesar la ventana de datos del sensor", e)
+                    } finally {
+                        inferenceInProgress.set(false)
+                    }
                 }
+            } else {
+                // Inferencia ocupada: duplicar ultima prediccion para no perder el intervalo de 1s
+                MonitoringLogManager.recordDuplicatePrediction(this)
             }
         }
     }
@@ -124,9 +137,8 @@ class FallDetectionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val emergencyNumber = intent?.getStringExtra("EMERGENCY_NUMBER") ?: ""
-        MonitoringLogManager.startSession(this, emergencyNumber)
         MonitoringState.isMonitoring.value = true
-        MonitoringState.remainingSeconds.value = 120
+        MonitoringState.remainingSeconds.value = 125 // 5 segundos de preparación + 120s reales
 
         val notification = NotificationCompat.Builder(this, "fall_channel")
             .setContentTitle("Protección activa")
@@ -135,16 +147,22 @@ class FallDetectionService : Service() {
             .setOngoing(true)
             .build()
 
-        // 2. Iniciar el servicio en primer plano con el tipo correcto (obligatorio en Android 14+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH)
         } else {
             startForeground(1, notification)
         }
-        sensorHandler.start()
-
-        // 3. Iniciar temporizador de 2 minutos (120 000 ms)
-        startSessionTimer()
+        
+        object : CountDownTimer(5_000L, 1_000L) {
+            override fun onTick(millisUntilFinished: Long) {
+                MonitoringState.remainingSeconds.value = (millisUntilFinished / 1000).toInt() + 120
+            }
+            override fun onFinish() {
+                MonitoringLogManager.startSession(this@FallDetectionService, emergencyNumber)
+                sensorHandler.start()
+                startSessionTimer()
+            }
+        }.start()
 
         return START_STICKY
     }
