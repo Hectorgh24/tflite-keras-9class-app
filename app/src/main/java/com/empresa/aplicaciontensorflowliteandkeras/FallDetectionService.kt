@@ -1,215 +1,215 @@
-package com.empresa.aplicaciontensorflowliteandkeras
+package com.empresa.aplicaciontensorflowliteandkeras // Qué: Declaración del paquete del código. Para qué: Agrupar la lógica estructural de la App. Por qué: Obligatorio en el ecosistema Android para identificación del proceso y compilación limpia de importaciones relativas.
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.Service
-import android.content.Context
-import android.content.Intent
-import android.content.pm.ServiceInfo
-import android.os.Build
-import android.os.CountDownTimer
-import android.os.IBinder
-import android.os.PowerManager
-import android.util.Log
-import androidx.core.app.NotificationCompat
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
+import android.app.NotificationChannel // Qué: Importa la clase NotificationChannel. Para qué: Declarar en Android una tubería persistente para notificaciones visuales. Por qué: En Android 8.0+ (Oreo), ningún servicio persistente sobrevivirá si su notificación flotante carece de canal pre-registrado.
+import android.app.NotificationManager // Qué: Importa la clase gestora de alertas nativa. Para qué: Enviar y construir las interfaces descriptivas en barra de estado del sistema. Por qué: Obligatorio para servicios de Background Foreground (Servicios Frontales).
+import android.app.Service // Qué: Importa clase abstracta central Service del SO. Para qué: Herencia forzosa permitiendo declarar un demonio invisible persistente. Por qué: Para realizar monitoreo continuo aunque la interfaz GUI muera, se cierre o se pause.
+import android.content.Context // Qué: Importa manejador de entornos del SDK. Para qué: Operar recursos de sistema como notificaciones, alarmas, energía y hardware. Por qué: Sin contexto un servicio no tiene ganchos al sistema Kernel inferior.
+import android.content.Intent // Qué: Importa encapsulador universal Intent. Para qué: Canalizar flujos y parámetros de una clase a otra o del servicio a interfaz externa (y viceversa). Por qué: Método obligatorio de comunicación asíncrona dentro del framework nativo.
+import android.content.pm.ServiceInfo // Qué: Importa metadatos descriptivos anexos de servicios. Para qué: Etiquetar e inyectar el comportamiento o la clasificación vital del servicio actual. Por qué: Desde Android 10+ (Q) forzosamente debes categorizar los servicios de largo aliento con un identificador de meta (como HEALTH o LOCATION) para que OS entienda su propósito.
+import android.os.Build // Qué: Importa herramientas de inspección en tiempo de ejecución. Para qué: Averiguar la versión SDK de hardware en la que se ejecuta actualmente la rutina de código. Por qué: Diferentes apis deprecadas de Android requieren condicionales según el versionado para no corromper la app de cuajo en compatibilidad retroactiva.
+import android.os.CountDownTimer // Qué: Importa temporizador genérico primitivo. Para qué: Manejar los bucles de caducidad asíncrona de manera segura y precisa ajena al hilo principal que crashea todo. Por qué: Más ligero y certero que usar handlers repetitivos manuales en Kotlin.
+import android.os.IBinder // Qué: Importa objeto de vinculación profunda inter-proceso. Para qué: Interfaz para servicios anclados o binded. Por qué: Android exige implementarlo aun si no es usado (Bounded Service versus Started Service puro).
+import android.os.PowerManager // Qué: Importa gestor crudo de energía del Kernel. Para qué: Apropiarse temporalmente del flujo de sueño o de la orden de despertar de procesador (CPU) y memoria profunda. Por qué: Sin apoderarse de permisos Wakelock, los SO Android estrangulan los servicios de acelerómetro cuando se bloquea la pantalla móvil a negro en menos de 5 minutos, parando mediciones letales críticas.
+import android.util.Log // Qué: Importa el canalizador interno de desarrollo. Para qué: Imprimir eventos y trazabilidad en el Logcat del IDE en PC. Por qué: Indispensable para diagnosticar comportamientos huérfanos durante fase asíncrona en producción o dev nativo puro.
+import androidx.core.app.NotificationCompat // Qué: Importa wrapper retrocompatible de alertas modernas. Para qué: Fabricar una notificación frontal que se vea bien idéntica en cualquier versión vieja o moderna del OS de turno de un solo brochazo de código simple. Por qué: Simplifica lidiar con Builder Methods antiguos fallidos.
+import java.util.concurrent.ExecutorService // Qué: Importa manejador universal concurrente del lenguaje. Para qué: Inyectar colas formales robustas de acciones pesadas con la IA. Por qué: TFLite bloquea horriblemente el UI Thread (Main) obligando a mandar los cálculos pesados a trabajadores anónimos fuera de la vista general (Thread pools).
+import java.util.concurrent.Executors // Qué: Importa creador fabril de hilos ejecutores. Para qué: Obtener un motor con ciertas capacidades ya instanciadas estáticas. Por qué: Usar un único SingleThread garantiza que no existan inferencias atropellándose mutuamente compitiendo por RAM al chocar predicciones y fallar out-of-memory.
+import java.util.concurrent.atomic.AtomicBoolean // Qué: Importa bandera booleana segura e inmutable en multi-procesos. Para qué: Interceptar y abortar peticiones encimadas si el hilo ejecutor está ahogándose realizando sumas de matrices de la IA por retraso térmico del procesador Android viejo o ahogado. Por qué: Booleanos simples en rutinas asíncronas crashean generando problemas de concurrencia de carrera (Race Condition) inaceptable aquí.
 
-class FallDetectionService : Service() {
+class FallDetectionService : Service() { // Qué: Declara la clase heredando obligatoriamente de Service. Para qué: Convertirse oficialmente ante el manifiesto en un servicio Android en Background que persistirá con vida ajena al MainActivity visual primario efímero. Por qué: Diseño de arquitectura estricta e imperativa mandatoria Android moderna.
 
-    private lateinit var classifier: FallDetectionClassifier
-    private lateinit var sensorHandler: SensorHandler
-    private lateinit var inferenceExecutor: ExecutorService
-    @Volatile
-    private var classifierReady = false
+    private lateinit var classifier: FallDetectionClassifier // Qué: Declara atributo perezoso referencial al módulo nativo AI en sí. Para qué: Invocar y enviar más adelante el tensor aplanado que sale de los búferes y lo transforme en vector predictivo. Por qué: Usa lateinit para aplazar inicialización evitando que el servicio consuma todo el RAM general en crudo hasta que sea vital levantarlo real y firmemente.
+    private lateinit var sensorHandler: SensorHandler // Qué: Declara atributo de enlazamiento hacia el listener gestor crudo del acelerómetro. Para qué: Manejar su ciclo vital prendiendo y apagando según la caducidad global del monitoreo maestro. Por qué: Lateinit por igual motivo, aplazamiento funcional inteligente de RAM y evitar punteros nulos.
+    private lateinit var inferenceExecutor: ExecutorService // Qué: Instancia el puntero controlador multi hilos. Para qué: Asignarle trabajos densos de cálculos sobre TFLite C++. Por qué: Desatasca Main Thread nativo obligando a computar las mil multiplicaciones matriciales del forward-pass inferencial en un core de silicio secundario aislado del render visual por pantalla del usuario.
+    @Volatile // Qué: Declara anotación JVM ordenando exclusividad caché. Para qué: Garantizar que cuando este switch de True/False cambie, todos los hilos de CPU que estén viendo la variable observen el cambio milimétrico exacto instantes precisos. Por qué: Prevención de bugs lógicos asíncronos fatales inter hilos.
+    private var classifierReady = false // Qué: Switch lógico instanciado en apagado. Para qué: Alertar si el modelo TFLite de 9 clases terminó de cargar de la MicroSD o Disco. Por qué: Disparar predictiva sin terminar carga truena el puntero nativo JNI (Fatal Exception crudo).
 
     /** Flag atomico para evitar saturar el executor con tareas de inferencia */
-    private val inferenceInProgress = AtomicBoolean(false)
+    private val inferenceInProgress = AtomicBoolean(false) // Qué: Semáforo estricto interhilos, rojo o verde. Para qué: Denegar peticiones extra del acelerómetro si el motor TFLite aún está atragantado mascando la ventana anterior y suelta predicciones ahogadas por falta de potencia de máquina de baja gama ahogando pipeline entero y causando retrasos letales crudos de minutos de diferencia en lo real VS alerta real. Por qué: Las caídas son críticas, mejor dropear ventana enlentecida duplicando su resultado que romper sistema por sobre saturación RAM encolando tareas de un segundo y explotando.
 
     /** WakeLock parcial para mantener la CPU activa incluso con pantalla apagada */
-    private var wakeLock: PowerManager.WakeLock? = null
+    private var wakeLock: PowerManager.WakeLock? = null // Qué: Puntero perezoso al cerrojo del kernel Doze mode limitante general. Para qué: Evitar que el sistema duerma nuestro algoritmo al segundo de apagar display OLED por protección a la autonomía de la batería estándar en android. Por qué: Sin Wakelock activo, el monitoreo muere y jamás alertará en el bolsillo.
 
     /** Temporizador de 2 minutos (120 000 ms) para auto-detener la sesión */
-    private var sessionTimer: CountDownTimer? = null
+    private var sessionTimer: CountDownTimer? = null // Qué: Estructura del temporizador crudo nativo Android reseteable sin depender de loops o delays problemáticos de hilos base. Para qué: Implementar cronómetro oficial limitante (2 min). Por qué: Regla impuesta de experimento físico crudo e íntegro oficial sin depender de toques GUI visuales externos ajenos a la lógica.
 
-    override fun onCreate() {
-        super.onCreate()
+    override fun onCreate() { // Qué: Sobreescritura obligatoria del momento primario único de nacimiento biológico en memoria de todo servicio Android nativo. Para qué: Declarar e instanciar en vida RAM todos los eslabones pesados (IA, Sensores y Notificaciones) garantizando estado puro y sólido. Por qué: Se ejecuta sola una vez; ideal y preciso para inicialización.
+        super.onCreate() // Qué: Traspasa autoridad inicial al padre (SO Kernel). Para qué: Permitirle acoplarse y registrarse debidamente como Demonio de sistema nativo. Por qué: Si se obvia, falla todo estruendosamente por desasociación C++ interna nativa.
 
         // 1. Crear el canal de notificaciones (OBLIGATORIO para evitar cierres forzados)
-        createNotificationChannel()
+        createNotificationChannel() // Qué: Llamado imperativo. Para qué: Declarar en Manifest y Kernel del SO la intención formal del canal visual. Por qué: Requisito de API 26+ imperativo para servicios que declaren vivir mucho (como Spotify, Maps y éste de Salud crítica IoT de monitoreo de caídas de usuario).
 
         // 2. Adquirir WakeLock parcial para que la CPU no se duerma en segundo plano
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "FallDetector::MonitoringWakeLock"
-        ).apply {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager // Qué: Se adjudica y castéa el puntero primario de energía del sistema operativo base. Para qué: Pedir favor extremo de no dormir los cores físicos del procesador central del teléfono inteligente. Por qué: El teléfono tiende a hibernar radical tras un minuto de oscuridad de panel LCD nativo.
+        wakeLock = powerManager.newWakeLock( // Qué: Declara la petición de encadenamiento energético instanciando el bloqueo en vida del CPU real. Para qué: Obligar al procesador a sostener el paso y ritmo. Por qué: Salvoconducto técnico indispensable y mandatorio de monitoreos IoT médicos puros continuos puros.
+            PowerManager.PARTIAL_WAKE_LOCK, // Qué: Tipo de bloqueo sutil. Para qué: Informar que el procesador NO debe apagarse pero que SI damos permiso que la pantalla muera o duerma profundo OLED. Por qué: Conservar batería crítica es fundamental para viabilidad; no requerimos luces encendidas sino CPU corriendo y procesando la Inteligencia pura base del acelerómetro nativo físico en lo oscuro.
+            "FallDetector::MonitoringWakeLock" // Qué: Sello nominativo textual auditable de quien pide el abuso de pila. Para qué: Permitir que si un usuario investiga fuga de batería en Ajustes le salte claramente que este bloque fue el culpable claro asumiendo culpa legítima pura con etiqueta. Por qué: Transparencia obligada en Android OS nativa general.
+        ).apply { // Qué: Funcional de anidamiento de operación para ahorrar renglones Kotlin inútiles. Para qué: Accionar el cierre de candado o bloqueo sobre la instancia fresca y pura recién declarada sin requerir otra línea visual extra. Por qué: Programación fluida y recomendada moderna y prolija idiomática general.
             // Timeout de seguridad de 3 minutos (180s) por si algo falla
-            acquire(3 * 60 * 1000L)
-        }
+            acquire(3 * 60 * 1000L) // Qué: Invoca formal y agresivamente acción del Kernel pasando tiempo salvavidas forzado explícito (3 min = 180s en ms) garantizando vida del hilo general de proceso CPU si falla app y previene fuga de batería total cruda inintencional. Por qué: Por diseño el monitoreo expira 120s; damos 60s extra de colchón para grabar json a disco flash puro sin prisas que pudiese dejar base cruda corrupta irrecuperablemente pura.
+        } // Qué: Final del aplicador y declarador crudo en Kotlin base nativo puro. Para qué: N/A. Por qué: N/A.
 
-        inferenceExecutor = Executors.newSingleThreadExecutor()
-        inferenceExecutor.execute {
-            try {
-                classifier = FallDetectionClassifier(this)
-                classifierReady = true
-                Log.d("FallService", "Clasificador inicializado en segundo plano")
-            } catch (e: Exception) {
-                Log.e("FallService", "No se pudo inicializar el clasificador", e)
-            }
-        }
+        inferenceExecutor = Executors.newSingleThreadExecutor() // Qué: Reserva un esclavo solitario único y puro, un thread aparte para trabajo duro y sucio que evitará que bloqueen los gráficos puros por ahogo. Para qué: Recluir toda la inferencia matemática pura de predicciones pesadas sin joder otros módulos asíncronos rápidos de 50hz puros. Por qué: Múltiples hilos ahogan la memoria si se ejecutan muchas inferencias; Single limita que solo 1 ventana procese, encolando las demás en fila india pacífica y segura general.
+        inferenceExecutor.execute { // Qué: Manda el primer trabajo oficial pesado y sucio hacia el esclavo recién nacido puro. Para qué: Cargar los milimétricos pesos y tensores puros pesados de IA TFLite desde el SSD al RAM (IO operation). Por qué: Cargar .tflite bloquea fracciones largas, no debe ir nunca en onStartCommand.
+            try { // Qué: Intercepta desastres I/O al cargar en un hilo. Para qué: Absorber el golpe fatal puro si no hallan modelo compilado .tflite. Por qué: Resiliencia del sistema IoT.
+                classifier = FallDetectionClassifier(this) // Qué: Invoca al maestro de JNI TFLite dándole contexto nativo (this) para extraer Asset puro precompilado tflite 9 clases pura base de datos cruda nativa interna. Para qué: Plantar la neurona base. Por qué: Necesario puramente para inferir en cada ciclo posterior y asíncrono.
+                classifierReady = true // Qué: Cambia la baliza mágica Volátil asíncrona hacia verdad (VERDE). Para qué: Señalizar al SensorHandler esclavo (que vive en otro core o thread) que ahora SÍ puede y debe escupir matrices a TFLite. Por qué: Sincronización asíncrona Thread-Safe nativa cruda general para prevenir fatal exception de JNI Nulo apuntando a espacio negro general vacío crudo en memoria RAM del dispositivo Android base original.
+                Log.d("FallService", "Clasificador inicializado en segundo plano") // Qué: Pinta marca de agua de desarrollo pura. Para qué: Certificar hito crítico inicial de IA. Por qué: Facilidad al desarrollador y de log interno puro.
+            } catch (e: Exception) { // Qué: Sumidero de colapso asíncrono. Para qué: Absorber falta del .tflite o crasheo JNI asíncrono sin reventar brutal y callar todo silencioso. Por qué: Evita cierre agresivo y desastroso total irrecuperable.
+                Log.e("FallService", "No se pudo inicializar el clasificador", e) // Qué: Dibuja error manchado de sangre en logcat devuelto. Para qué: Exponer la razón (Out Of Memory, Not Found File, etc) del crasheo JNI. Por qué: Depuración vital de arquitectura móvil C++ puro e intermedio.
+            } // Qué: Cierre resiliencia pura de IA en hilo oscuro de carga de pesajes entrenados estandarizados (Weights load). Para qué: N/A. Por qué: N/A.
+        } // Qué: Fin del encargo al sirviente secundario ejecutor base libre oscuro y solitario general puro. Para qué: N/A. Por qué: N/A.
 
-        sensorHandler = SensorHandler(this) { windowData ->
+        sensorHandler = SensorHandler(this) { windowData -> // Qué: Inicia constructo esclavo físico invocando clase secundaria delegada inyectando (this) como contexto necesario inicial primario crudo y un Callback lambda anónimo nativo receptor puro de matriz plana 1x453 pletórica de float. Para qué: Instanciar y recibir delegación abstracta pura de métricas de Hardware IMU crudas cada 1 seg. Por qué: Desacopla 50Hz de recolecciones del servicio y delega responsabilidad pura física y abstracta a experto.
             // Solo lanzar inferencia si no hay una en progreso.
             // Si el motor esta ocupado, registrar prediccion duplicada para mantener intervalos exactos de 1s.
-            if (inferenceInProgress.compareAndSet(false, true)) {
-                inferenceExecutor.execute {
-                    try {
-                        processInference(windowData)
-                    } catch (e: Exception) {
-                        Log.e("FallService", "Fallo critico al procesar la ventana de datos del sensor", e)
-                    } finally {
-                        inferenceInProgress.set(false)
-                    }
-                }
-            } else {
+            if (inferenceInProgress.compareAndSet(false, true)) { // Qué: Operador condicional atómico MultiHilo que pregunta y cambia en 1 nanosegundo puro. Para qué: Garantizar con blindaje mutex que SÓLO un hilo pueda entrar si estaba apagado y prender el semáforo al unísono general nativo sin choque. Por qué: Elude race conditions (Corrupción de RAM) donde 2 eventos 50Hz traten de encender motor inferencia cruda de TFLite a la par, bloqueando y desbordando buffers internos JNI y OutOfMemory Exceptions crudas puras letales.
+                inferenceExecutor.execute { // Qué: Manda el fardo crudo FloatArray 1D hacia el esclavo Thread puro 100% abstraído de GUI o sistema físico interrumptor puro crudo de sensor base (Evita ahogar listener 50hz con latencia C++). Para qué: Mandar matemáticas matriciales lejos de rutina prioritaria IMU. Por qué: Patrón de diseño imperioso y crucial.
+                    try { // Qué: Intento ciego de infusión inferencial pura. Para qué: Blindar caída catastrófica interna cruda de motor IA nativa. Por qué: Siempre se blinda ejecución foránea C++ delegada JNI crudo.
+                        processInference(windowData) // Qué: Invoca función interna con vector puro aplanado normalizado [453]. Para qué: Ejecutar la inferencia real evaluativa discriminatoria (Caída o No). Por qué: Aísla lógica de negocio del enrutamiento crudo.
+                    } catch (e: Exception) { // Qué: Receptor colapso de inferencia por error (EJ: vector corrupto NaN flotante). Para qué: Evitar el quiebre general asíncrono y aborto ciego silencioso sin advertencia pura de crash lógico de IA pura. Por qué: Confiabilidad y resiliencia máxima pura y robusta 100% nativa.
+                        Log.e("FallService", "Fallo critico al procesar la ventana de datos del sensor", e) // Qué: Exhibe error sangriento con StackTrace puro y duro. Para qué: Encontrar el porqué falló TFLite Run JNI (Dimension Error, Type Cast, Null etc). Por qué: Debugging.
+                    } finally { // Qué: Cierre inexorable imperativo suceda o no suceda lo malo puro anterior general nativo crudo lógico vitalicio puro de rutina Try/catch base pilar de ejecución segura y blindada. Para qué: N/A. Por qué: N/A.
+                        inferenceInProgress.set(false) // Qué: Retorna el semáforo a verde (Falso = Libre). Para qué: Habilitar que la próxa ventana recabada logre pasar al motor TFLite sin chocar con puertas cerradas y sea admitida limpia y pura para procesamiento matemático neuronal nativo general. Por qué: Desbloquea máquina y engrasa el pipelining general.
+                    } // Qué: Fin bloque finally reseteo crudo. Para qué: N/A. Por qué: N/A.
+                } // Qué: Fin delegación trabajo a hilo negro enclaustrado. Para qué: N/A. Por qué: N/A.
+            } else { // Qué: Entra acá si el semáforo atómico escupió que SÍ estaba ahogándose y corriendo aún otra inferencia de ventana pasada vieja. Para qué: Descartar trabajo y no encolarlo rompiendo y apilando ventanas haciendo que el tiempo futuro desfase de realidad causando retraso de 1 minuto por acoplo asíncrono lento de cpu ahogada. Por qué: Evita Delay letal puro desfasando caídas de la realidad física del cuerpo humano.
                 // Inferencia ocupada: duplicar ultima prediccion para no perder el intervalo de 1s
-                MonitoringLogManager.recordDuplicatePrediction(this)
-            }
-        }
-    }
+                MonitoringLogManager.recordDuplicatePrediction(this) // Qué: Inyecta orden a Singleton JSON crudo. Para qué: Repite etiqueta pretérita inyectando un dummy entry en log histórico de la RAM de variables lógicas generales puras abstractas. Por qué: Mantiene los gráficos de python de 1 segundo puramente hermosos y alineados sin huecos de tiempo extraños.
+            } // Qué: Fin de bifurcación de descarte atómico ciego de protección de CPU y RAM general nativa pura asíncrona de motor TFLite nativa y estricta general. Para qué: N/A. Por qué: N/A.
+        } // Qué: Fin de lambda callback inyectado que recepciona y enruta ventana de datos flotante 1D desde esclavo hacia IA y Bitácoras. Para qué: N/A. Por qué: N/A.
+    } // Qué: Fin ciclo biológico primario de gestación cruda y pura general del Servicio y Demonios. Para qué: N/A. Por qué: N/A.
 
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val serviceChannel = NotificationChannel(
-                "fall_channel",
-                "Monitoreo de Caídas",
-                NotificationManager.IMPORTANCE_LOW // IMPORTANCE_LOW evita que suene cada vez que inicia
-            )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(serviceChannel)
-        }
-    }
+    private fun createNotificationChannel() { // Qué: Función puramente administrativa de UI y UX. Para qué: Engendrar el carril oficial del Servicio ForeGround nativo crudo en SO Oreo+. Por qué: Previene fatalidad asíncrona nativa pura.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) { // Qué: Condición limitante de época de compilación (Android 8 Oreo crudo). Para qué: Evita que crashee en celulares reliquia anteriores al 2017 que no poseen ni necesitan ni entienden qué son Canales. Por qué: Retrocompatibilidad pura obligatoria base de la industria móvil de Google estricta y pura general sin fallas lógicas.
+            val serviceChannel = NotificationChannel( // Qué: Declara y configura un tubo virgen nativo en sistema Android global puro y duro real. Para qué: Crear un receptáculo que será el hogar de nuestra alerta de sistema. Por qué: Las apps ya no avientan notificaciones ciegamente, deben canalizarse.
+                "fall_channel", // Qué: ID textual único identificativo de código del tubo puro nativo. Para qué: Inyectar al constructor futuro de notificaciones para encontrar a su madre constructora general. Por qué: Amarre lógico imperioso base interno.
+                "Monitoreo de Caídas", // Qué: Nombre legible bonito expuesto al humano en panel de ajustes de sistema de Android nativo puro. Para qué: Dejar que humano entienda qué genera estos carteles constantes flotantes puros e imborrables nativos asíncronos. Por qué: Ética de UI e imperativo de usabilidad de Google Play puro interno general crudo asíncrono y real nativo base del usuario estándar de Android OS.
+                NotificationManager.IMPORTANCE_LOW // IMPORTANCE_LOW evita que suene cada vez que inicia // Qué: Castra capacidad audible cruda al tubo. Para qué: Impedir ruido insoportable o vibración loca por notificaciones perennes que nacen crudas. Por qué: Los servicios ForeGround NO DEBEN sonar, solo aparecer como placa silenciosa constante indicando seguridad (como GPS de Maps y reproductor MP3).
+            ) // Qué: Cierre constructor objeto Canal puro. Para qué: N/A. Por qué: N/A.
+            val manager = getSystemService(NotificationManager::class.java) // Qué: Pesca puntero gestor dictatorial de todas las alertas OS. Para qué: Requerirle alta del canal. Por qué: El servicio en sí carece de potestad nativa para escribir en Panel de Notificaciones, debe implorarlo al Manager global de SO.
+            manager?.createNotificationChannel(serviceChannel) // Qué: Ordena al dictador inscribir la obra, con safe call null. Para qué: Materializar el tubo en BD interna del Kernel de Android puramente. Por qué: Si se obvia, las alertas futuras se pudrirán en RAM sin jamás emerger visualmente.
+        } // Qué: Fin bloque If Retrocompatible y cuidadoso de versiones antiguas SDK. Para qué: N/A. Por qué: N/A.
+    } // Qué: Fin encapsulamiento subrutina creacional cruda de Canal de SO nativo y base pura. Para qué: N/A. Por qué: N/A.
 
-    private fun processInference(data: FloatArray) {
-        if (!classifierReady) {
-            return
-        }
+    private fun processInference(data: FloatArray) { // Qué: Cerebro procesal asíncrono y oscuro crudo del servicio en Thread aparte. Para qué: Inyectar 453 float a IA, extraer 9 probabilidades, graficar variables mutables (LiveData) y reaccionar salvando vida emitiendo SOS puro general si cumple. Por qué: Centraliza evaluación lógica aislada de IMU.
+        if (!classifierReady) { // Qué: Bouncer (Cadenero) revisor de validez temprana de motor IA C++. Para qué: Bloquear paso si modelo jamás cargó por falla o peso de archivo grande. Por qué: Invocar classify sobre TFLite sin cargar genera NullPointer Fatal JNI Exception rompiendo OS y reiniciando crudo, mejor rebotar data.
+            return // Qué: Escape abortivo rápido asíncrono silencioso sin rastro ni crasheo fatal general puro interno. Para qué: Evitar desastre total y abortar función callada e inofensiva permitiendo retrying natural puro de arquitectura resiliente IoT de 50hz. Por qué: Buena praxis dev.
+        } // Qué: Fin bloque Bouncer seguridad JNI. Para qué: N/A. Por qué: N/A.
 
-        val (label, confidence) = classifier.classify(data)
+        val (label, confidence) = classifier.classify(data) // Qué: Aplica desestructuración Kotlin (Tupla x,y) sobre retorno crudo IA TFLite pura y pesada, alimentando con vector puro Float y atajando nombre 100% real (Ej. "Caida") y confianza "0.98". Para qué: Extraer predicción destilada e instanciar almas de decisión. Por qué: Legibilidad idiomática hermosa pura Kotlin limpia y asíncrona (Recordar esto vive en subhilo).
 
         // Actualizar la UI en tiempo real
-        val porcentaje = (confidence * 100).toInt()
-        val predictionText = "$label ($porcentaje%)"
-        MonitoringState.currentPrediction.value = predictionText
+        val porcentaje = (confidence * 100).toInt() // Qué: Aplana probabilidad técnica abstracta asíncrona oscura y la escala a humano puro e íntegro (0 a 100). Para qué: Generar etiqueta entendible cruda (Ej. 98% en vez de 0.987747). Por qué: Cuestión cosmética en bitácora cruda y gráfica.
+        val predictionText = "$label ($porcentaje%)" // Qué: Concatenación string final de molde de vista cruda asíncrona pura. Para qué: Crear letrero estático informativo crudo íntegro "Caida Frontal (98%)" para display inmediato visual vivo e íntegro asíncrono y logger JSON interno profundo base de todo el reporte de tesis. Por qué: Agrupa.
+        MonitoringState.currentPrediction.value = predictionText // Qué: Expropia inyección a objeto de Estado Compartido (LiveData/MutableState) reactivo asíncrono cruzando fronteras de Hilos puros sin chocar ni crashear crudo a MainActivity que lo vigila expectante en el Main Thread de UI sin corromper crudo base. Para qué: Despega el cartel en pantalla del cel. Por qué: Puente inter hilos.
         // Pasar tanto el texto de predicción como el nombre de clase crudo para el gráfico
-        MonitoringLogManager.updatePrediction(this, predictionText, label)
-        MonitoringLogManager.recordWindow(this)
+        MonitoringLogManager.updatePrediction(this, predictionText, label) // Qué: Informa al burócrata escritor asíncrono de discos JSON crudo y puro pasando parámetros. Para qué: Aloje el reporte textual general y el rótulo matemático crudo puro de tabla de 9 clases para futura conversión en Python de gráficos plot asíncronos y reales puros de reporte de tesis experimental y de prueba clínica general y científica rigurosa pura. Por qué: Guardar telemetría separando UI y backend crudo (PredictionText vs Label crudo).
+        MonitoringLogManager.recordWindow(this) // Qué: Dispara orden formal de empapelado JSON general (Guardar Frame absoluto temporal). Para qué: Crear el array anexo temporal JSON de RAM y Sensor en el segundo actual asíncrono para cerrar un segundo cabal de registro en el experimento. Por qué: Cadencia y pulso de bitácora asegurada pura y sincrónica con AI 100%.
 
         // Lista de clases que representan una caída real (índices 1-8)
-        val fallClasses = listOf(
-            "Caída frontal", "Caída a la derecha", "Caída hacia atrás",
-            "Caída contra obstáculo", "Caída (intentando protegerse)", "Caída al sentarse",
-            "Desmayo / Síncope", "Caída a la izquierda"
-        )
+        val fallClasses = listOf( // Qué: Constante array comparativa inyectada al vuelo. Para qué: Separar el trigo crudo inofensivo de las emergencias críticas asíncronas letales de las 9 (aislando "Caminando" de los demás). Por qué: Requisito de la tabla 9 de etiquetas (Donde clase 0 no es peligro y 1 a 8 si).
+            "Caída frontal", "Caída a la derecha", "Caída hacia atrás", // Qué: Elementos 1 a 3 puros y crudos de emergencia real del modelo keras. Para qué: Enlistarlos a tabla discriminadora asíncrona cruda pura general interna de condicional de evaluación binaria pura letal o no letal cruda. Por qué: Mapeo manual exacto.
+            "Caída contra obstáculo", "Caída (intentando protegerse)", "Caída al sentarse", // Qué: Elementos 4 a 6 puros y contiguos. Para qué: Misma finalidad de encadenamiento semántico asíncrono. Por qué: Necesario puramente para comparar cadenas y decidir alarma pura y sonora nativa y violenta del SOS final del algoritmo inteligente y puro general del IoT médico experimental puro de tesis crudo interno y base puro lógico.
+            "Desmayo / Síncope", "Caída a la izquierda" // Qué: 7 a 8 puros y crudos finales de tabla de TensorFlow. Para qué: Idem. Por qué: Mapeo crudo.
+        ) // Qué: Cierre array de alerta roja pura. Para qué: N/A. Por qué: N/A.
 
         // Lógica de detección: > 90% de confianza y debe ser estrictamente una clase de caída
-        if (label in fallClasses && confidence > 0.90f) {
-            MonitoringLogManager.recordFall(this)
-            Log.w("FallService", "CAÍDA DETECTADA: $label con $porcentaje%")
+        if (label in fallClasses && confidence > 0.90f) { // Qué: Bifurcación letal crítica evaluativa final de AI y lógica. Pregunta 2 cosas: ¿Es caída real validada en array? Y, si es sí, ¿El motor JNI TFLite está sumamente seguro (>90%) de que no vio fantasmas ruidosos del sensor corrupto por vibraciones anómalas o caídas de celular hueco en escritorio? Para qué: Ser el muro de contención definitivo antes del molesto pitido ensordecedor de alerta médica, erradicando falsos positivos. Por qué: Las alarmas biomédicas DEBEN ser extremadamente escépticas y seguras (Alto Umbral F1-Score general, Recall sacrificado levemente para no volver loco al abuelo con ruidos diarios y mermar estrés por alertas vanas y tontas de sensores basura no limpios asíncronos y de modelos de Machine Learning sobreajustados puros y crudos).
+            MonitoringLogManager.recordFall(this) // Qué: Marca en fuego y sangre la alerta cruda JSON. Para qué: Notificar a bitácora y python de que un evento anómalo ocurrió en el milisegundo T de la línea temporal del gráfico de dispersión, dibujando el punto ROJO enorme en vez de azul rutinario en la tesis experimental general base asíncrona nativa. Por qué: Documentar.
+            Log.w("FallService", "CAÍDA DETECTADA: $label con $porcentaje%") // Qué: Expele baliza asíncrona tipo Warning amarilla pálida cruda al logcat de Android Studio interno de dev. Para qué: Facilitar escrutinio en test físico humano de caída en escritorio sin depender de bitácora en celular sino en laptop viva. Por qué: Utilidad.
 
-            if (!MonitoringState.sosActive.value) {
-                MonitoringState.sosActive.value = true
+            if (!MonitoringState.sosActive.value) { // Qué: Chequeo atómico secundario rebotando dobles alarmas superpuestas encimadas. Para qué: Ignorar la lluvia de predicciones asíncronas crudas puras que se apilan por la caída estática en suelo crudo que el motor sigue viendo como un evento T+1 segundo pero que es la misma emergencia continuada. Por qué: Prevenir que la app reinicie visualmente la alerta cruda mil veces o pite ensordecedor ahogando hilos. Lógica defensiva pura antirebote y anti latencia (Debounce).
+                MonitoringState.sosActive.value = true // Qué: Conmuta reactor atómico LiveData encendiendo alarma oficial en RAM compartida pura asíncrona. Para qué: Trancar la compuerta e ignorar todo hasta que usuario apague visualmente la UI o la ambulancia llegue real cruda lógica médica asíncrona. Por qué: Semáforo puro.
 
                 // Usar FLAG_ACTIVITY_SINGLE_TOP para traer la Activity existente al frente
                 // sin recrearla, evitando que la navegación se reinicie y saque al usuario
                 // de la pantalla de monitoreo
-                val intent = Intent(this, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    putExtra("FALL_DETECTED", true)
-                    putExtra("FALL_TYPE", label)
-                }
-                startActivity(intent)
-            }
-        }
-    }
+                val intent = Intent(this, MainActivity::class.java).apply { // Qué: Declara encapsulador de viaje e invocador crudo y puro hacia actividad central visual (GUI) de MainActivity. Para qué: Tratar de arrastrar los gráficos puros escondidos en doze de regreso a pantalla brillante AMOLED a los ojos ciegos del caído. Por qué: El servicio en background carece de render y no puede abrir ventanas por sí mismo, suplica a MainActivity mediante Intent puenteado asíncrono puro nativo de OS que se revele y de paso.
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP // Qué: Banderas pletóricas dictadoras de memoria de Android puras y base. Para qué: Obligar despertar app desde cero si murió (NEW_TASK) o si solo estaba escondida traerla a flote destilada (SINGLE_TOP) aplastando copias de RAM zombie y conservando estado y navegación UI Jetpack Compose pura actual de cronómetros sin matar y resetear contadores lógicos puros crudos base. Por qué: Sin estas flags, el SOS resetea la app reiniciando el crono y destruyendo el log visual crudo puro base asíncrono y destruyendo UX.
+                    putExtra("FALL_DETECTED", true) // Qué: Embala variable escondida booleana como paquete DHL crudo puro. Para qué: Instruir pasivamente a MainActivity de que despierte pero mutando y desatando el caos rojo alarmante y sonoro puro. Por qué: Paso de parámetros entre OS ajeno.
+                    putExtra("FALL_TYPE", label) // Qué: Embala el texto de la culpa pura de la red neuronal TFLite asíncrona (Ej: Caida Atrás). Para qué: Desplegar en pantalla grande al abuelo qué pasó puro. Por qué: Claridad y UI limpia pura y descriptiva médica asíncrona nativa cruda general interna de la app.
+                } // Qué: Fin clausura Intent builder. Para qué: N/A. Por qué: N/A.
+                startActivity(intent) // Qué: Ejecuta escopetazo puro ordenando OS lanzar MainActivity al frente rompiendo doze y pantalla si es posible. Para qué: Materializar el SOS visual puro. Por qué: Cúspide del servicio de monitor: alertar al humano que ya fracasó el algoritmo detectando caída fatal y real asíncrona pura base.
+            } // Qué: Fin condicional AntiRebote de Alarma Activa. Para qué: N/A. Por qué: N/A.
+        } // Qué: Fin condicional de umbral 90% IA y pertenencia a matriz de caídas puras crudas y reales. Para qué: N/A. Por qué: N/A.
+    } // Qué: Cierre función ejecutora cerebral TFLite asíncrona en hilo secundario y oscuro. Para qué: N/A. Por qué: N/A.
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val emergencyNumber = intent?.getStringExtra("EMERGENCY_NUMBER") ?: ""
-        MonitoringState.isMonitoring.value = true
-        MonitoringState.remainingSeconds.value = 125 // 5 segundos de preparación + 120s reales
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int { // Qué: Sobreescritura vital onStartCommand, corazón palpitante latente que despierta al ser invocado por otra clase cruda pura genérica. Para qué: Ordenar qué hacer en el milisegundo 1 de vida y acoplar metadatos empaquetados entrantes del MainActivity. Por qué: Acá sucede la lógica continua (no en OnCreate), cada invocación reinicia esta función dándole comandos asíncronos nativos al Demonio puro general interno Android.
+        val emergencyNumber = intent?.getStringExtra("EMERGENCY_NUMBER") ?: "" // Qué: Extrae teléfono embalado en Intent, si es nulo (por reinicio OS crudo zombie) adopta vacío inofensivo "". Para qué: Traspasar dato crítico de configuración a la bitácora que anota todo crudo JSON. Por qué: Salvaguarda crash.
+        MonitoringState.isMonitoring.value = true // Qué: Gira switch atómico global reactivo a prendido puro y verdadero crudo (VERDE). Para qué: Decir a la GUI Compose que mute botones a ROJO de apagado asíncrono. Por qué: Sincronismo Inter-clase puro.
+        MonitoringState.remainingSeconds.value = 125 // 5 segundos de preparación + 120s reales // Qué: Clava el reloj atómico reactivo a 125. Para qué: Poner la cuenta regresiva en pantalla general. Por qué: Se brindan 5 segundos mágicos puros y crudos inoperativos para que el humano acomode teléfono en cintura/bolsillo antes de despertar TFLite y evitar falso positivo crudo puro de temblores iniciales de manipulación inestable.
 
-        val notification = NotificationCompat.Builder(this, "fall_channel")
-            .setContentTitle("Protección activa")
-            .setContentText("Monitoreando actividad en segundo plano")
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setOngoing(true)
-            .build()
+        val notification = NotificationCompat.Builder(this, "fall_channel") // Qué: Ensambla placa plástica inmutable de cartel visual frontal nativo de Oreo usando Builder Pattern crudo puro. Para qué: Confeccionar qué va a leer el usuario todo el tiempo crudo puro asíncrono asomándose en el panel superior. Por qué: Requisito forzoso general para ser Demonio.
+            .setContentTitle("Protección activa") // Qué: Inyecta título nativo crudo inmutable fuerte y valiente. Para qué: Calmar psicológicamente. Por qué: UX.
+            .setContentText("Monitoreando actividad en segundo plano") // Qué: Inserta texto diminuto y subyacente aclaratorio crudo nativo y secundario. Para qué: Despejar dudas de uso puro asíncrono. Por qué: Idem.
+            .setSmallIcon(R.drawable.ic_launcher_foreground) // Qué: Adhiere icono gráfico vectorial base de cuña inmutable puro y escalable material crudo. Para qué: Adornar y legitimar. Por qué: Idem.
+            .setOngoing(true) // Qué: Fija bandera mágica de persistencia terca y obstinada pura y nativa. Para qué: Impedir que el usuario la barra o cierre arrastrando el dedo a los lados pura asíncrona forzosamente de sistema interno nativa general (Notificación Pegajosa o Sticky general irremovible) protegiendo el servicio de un swipe inintencional. Por qué: Vital si dependes que la alerta no se quite sino apretando el botón real de STOP.
+            .build() // Qué: Materializa el engendro y concreta construcción inmutable pura nativa general. Para qué: Arrojar clase formal que el Kernel logre leer. Por qué: Cierre de Builder Pattern.
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH)
-        } else {
-            startForeground(1, notification)
-        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { // Qué: Condicional Android 10+ (Q). Para qué: Separar comportamientos según reglas Google de servicios frontales nuevos que exigen tipo específico. Por qué: Evolución y depreciación de SO nativo puro.
+            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH) // Qué: Expropia inicio puro frontal pasando identificador '1', la chapa 'notification' y etiqueta Health vital. Para qué: Transformarse formalmente de servicio vulgar efímero a Demonio de Sistema Indestructible (casi) inyectando chapa Health que da privilegios extremos sobre RAM del sistema general (Android no ahoga apps de Salud puras). Por qué: Prerrogativa y salvavidas IoT extremo asíncrono puro general nativo crudo interno base.
+        } else { // Qué: Bifurcación vieja (Android 9 hacia abajo). Para qué: Manejar OS primitivos y laxos sin roles fijos puramente crudos. Por qué: Retrocompatibilidad pura obligatoria general asíncrona de 10 años en android estricto.
+            startForeground(1, notification) // Qué: Inyecta arranque vulgar puro frontal ciego. Para qué: Volverse demonio sin chapa estricta. Por qué: OS antiguo no las exigía y truena si se las ofreces porque no sabe leerlas.
+        } // Qué: Fin de condicional de Demonio frontal puro nativo crudo y vital asíncrono de sistema de protección. Para qué: N/A. Por qué: N/A.
         
-        object : CountDownTimer(5_000L, 1_000L) {
-            override fun onTick(millisUntilFinished: Long) {
-                MonitoringState.remainingSeconds.value = (millisUntilFinished / 1000).toInt() + 120
-            }
-            override fun onFinish() {
-                MonitoringLogManager.startSession(this@FallDetectionService, emergencyNumber)
-                sensorHandler.start()
-                startSessionTimer()
-            }
-        }.start()
+        object : CountDownTimer(5_000L, 1_000L) { // Qué: Invoca cronómetro anónimo, flotante y sacrificable configurando 5 milisegundos totales latiendo a 1 segundo cada tick puro asíncrono oscuro y nativo ajeno de TFLite crudo. Para qué: Tramar la farsa de los 5 segundos de colchón antes de abrir compuertas de sensores (Warm Up Time crudo). Por qué: Sin esto las manos humanas al meter móvil al pantalón desencadenan falsa alerta JNI TFLite pura y destructora rompiendo el experimento.
+            override fun onTick(millisUntilFinished: Long) { // Qué: Sobre-inscribe latido de 1 seg. Para qué: Enlazar GUI reactiva bajando el número en pantalla cada 1000ms puros. Por qué: Dar feedback humano real vivo puro a pantalla y calmar angustias UX puras asíncronas de diseño general.
+                MonitoringState.remainingSeconds.value = (millisUntilFinished / 1000).toInt() + 120 // Qué: Operador de resta y cast puro y empalme +120s falsos. Para qué: Dibujar que baja de 125 a 120 fluidamente pura de interfaz cruda asíncrona nativa reactiva general y base Kotlin y Compose interna de UI nativa Android. Por qué: Lógica matemática.
+            } // Qué: Fin callback latido. Para qué: N/A. Por qué: N/A.
+            override fun onFinish() { // Qué: Sobreescribe latido de muerte (Segundo cero de los primeros 5 colchón puro crudo inofensivo inicial base). Para qué: Iniciar el trabajo duro real. Por qué: Momento mágico de acople.
+                MonitoringLogManager.startSession(this@FallDetectionService, emergencyNumber) // Qué: Da luz verde a Bitácora JSON inyectando teléfono crudo de SOS puro. Para qué: Abrir archivo físico en RAM/Disco grabando metadatos. Por qué: Inicio formal de experimento crudo.
+                sensorHandler.start() // Qué: Ordena al experto del Acelerómetro inscribir su escucha asíncrona al IMU del celular de una vez por todas. Para qué: Soltar a la bestia de hardware 50Hz para que bombee arrays de data flotante hacia C++. Por qué: Punto Cero Real del tiempo crudo IoT puro.
+                startSessionTimer() // Qué: Inyecta e invoca un macro-temporizador gigante asíncrono y oscuro de 2 min crudo puro. Para qué: Encender la mecha autodestructiva que aniquilará el servicio pasado el tiempo reglamentario de prueba clínica IoT cruda. Por qué: Seguridad y ahorro puro de experimento.
+            } // Qué: Fin callback agónico de muerte onFinish. Para qué: N/A. Por qué: N/A.
+        }.start() // Qué: Acciona el gatillo que arranca el crono de 5s anidado puro y directo instanciado. Para qué: Poner a girar el reloj en 2do plano sin entorpecer ni pasmar la rutina superior. Por qué: Fluent API idiomática de Android pura asíncrona.
 
-        return START_STICKY
-    }
+        return START_STICKY // Qué: Retorna baliza inmutable ordenando ser PEGAJOSO crudo y puro al SO Kernel base. Para qué: Implorar al sistema operativo que, si por desgracia se saturó la RAM (Ej: abrieron Call of Duty o Cámara) y Android mata al servicio nuestro temporalmente por falta de aire puro, prometa resucitarlo idéntico y automáticamente sin que usuario haga nada en cuanto haya un mega libre (Revive y re-ejecuta onStartCommand mandando Intents nulos puramente crudos asíncronos nativos). Por qué: Resiliencia extrema contra asesino OOM Killer puro nativo base Android.
+    } // Qué: Fin de la orquestación maestra y monstruosa de control de flujo vital asíncrono y cerebro inicial (onStartCommand pura). Para qué: N/A. Por qué: N/A.
 
     /**
      * Temporizador de sesión: al llegar a 0, detiene el monitoreo automáticamente
      * guardando todos los datos correctamente.
      */
-    private fun startSessionTimer() {
-        sessionTimer?.cancel()
-        sessionTimer = object : CountDownTimer(120_000L, 1_000L) {
-            override fun onTick(millisUntilFinished: Long) {
-                MonitoringState.remainingSeconds.value = (millisUntilFinished / 1000).toInt()
-            }
+    private fun startSessionTimer() { // Qué: Rutina de invocación de reloj fatal final. Para qué: Encender la cuenta puramente oficial de los 2 Minutos de tortura y experimentación física cruda pura IoT nativa general base de caída y recolección de tesis. Por qué: Estructura modular pura.
+        sessionTimer?.cancel() // Qué: Elimina y aborta rastro anterior de otro reloj fantasma si el usuario apretó parar y luego jugar crudo muy rápido. Para qué: Impedir solapar y amontonar bombas de tiempo apiladas matando servicio doble vez (Memory leak). Por qué: Defensive Programming pura cruda asíncrona nativa básica general.
+        sessionTimer = object : CountDownTimer(120_000L, 1_000L) { // Qué: Crea crono ciego de 120 mil milisegundos puros pletóricos de vida latiendo a mil crudos asíncronos nativos puramente (2 mins a 1Hz). Para qué: Encender la mecha larga oficial. Por qué: Tesis y experimento manda 120s inmutables crudos puros lógicos generales.
+            override fun onTick(millisUntilFinished: Long) { // Qué: Refleja latido segundo a segundo del tiempo oficial largo puro. Para qué: Repintar el reloj que ve el abuelo en pantalla. Por qué: Idem.
+                MonitoringState.remainingSeconds.value = (millisUntilFinished / 1000).toInt() // Qué: Inyecta el tiempo crudo aplanado (Sin +120 falsos como el colchón anterior) a la interfaz viva atómica Compose reactiva y pura base general nativa. Para qué: Actualizar GUI viva. Por qué: Lógica base pura.
+            } // Qué: Fin latido crudo 1Hz. Para qué: N/A. Por qué: N/A.
 
-            override fun onFinish() {
-                MonitoringState.remainingSeconds.value = 0
-                Log.d("FallService", "Temporizador de 2 minutos completado. Auto-deteniendo monitoreo.")
+            override fun onFinish() { // Qué: Dictamina el final agónico inminente de la prueba biomédica cruda y pura general del voluntario (Minuto 2). Para qué: Frenar recolección cruda y salvar todo lo documentado sin desperdicios extra basura pura nativa asíncrona ni ahogar memoria más de la cuenta. Por qué: Delimitar el alcance base del ensayo clínico puro nativo.
+                MonitoringState.remainingSeconds.value = 0 // Qué: Trunca display reactivo a cero inamovible puro general. Para qué: Matar esperanzas de conteo loco crudo negativo -1 -2 etc. Por qué: Limpieza.
+                Log.d("FallService", "Temporizador de 2 minutos completado. Auto-deteniendo monitoreo.") // Qué: Imprime la defunción clínica cruda nativa y pura de la prueba asíncrona IoT. Para qué: Validar fin en terminal dev de Android Studio base puramente asíncrona logcat. Por qué: Informativo interno.
                 // Detener el servicio limpiamente (invoca onDestroy que guarda datos)
-                stopSelf()
-            }
-        }.start()
-    }
+                stopSelf() // Qué: Invoca eutanasia sistémica propia al servicio desde adentro de su propia entraña pura (kamikaze). Para qué: Suicidarse pidiendo amablemente al Android SO Kernel que desvincule memoria, limpie notificación frontal, tire la placa pegajosa y libere todo (Gatillando él mismo un llamado formal al método onDestroy). Por qué: Único modo seguro de parar y salvar datos puros y crudos inquebrantables.
+            } // Qué: Fin agónico final CountDownTimer puro. Para qué: N/A. Por qué: N/A.
+        }.start() // Qué: Acciona el reloj largo asíncrono 2 Minutos puro de IoT TFLite. Para qué: Que marche y haga su labor oscura. Por qué: Fluent API.
+    } // Qué: Fin de encapsulador maestro de bombas de tiempo lógicas asíncronas puras base. Para qué: N/A. Por qué: N/A.
 
-    override fun onDestroy() {
+    override fun onDestroy() { // Qué: Subrutina final funeral inamovible de todo servicio de la plataforma de Android puro y asíncrono. Para qué: Dar la última extremaunción a todos los hilos, variables y tensores C++ que dejamos abiertos sangrando RAM cruda a nivel hardware. Por qué: Si esta función no limpia la basura, el celular entra en Out Of Memory Exception letal en 5 minutos o ahoga procesos en el background nativo puro devorando la pila cruda (Batería).
         // Cancelar temporizador si aún está activo
-        sessionTimer?.cancel()
-        sessionTimer = null
+        sessionTimer?.cancel() // Qué: Asesina el crono largo por si al humano se le ocurrió apretar PARAR antes de los 2 Minutos puros reglamentarios abortando y saliendo de app crudo. Para qué: Evitar que el reloj fantasma mate procesos inyectados posteriores puros asíncronos nativos. Por qué: Memory Leak y Race Condition.
+        sessionTimer = null // Qué: Descarga basura RAM explícita referenciando Null crudo puro y asíncrono. Para qué: Allanar labor del Garbage Collector crudo de Kotlin y puramente interno y nativo JVM. Por qué: Buena praxis pura asíncrona médica.
 
-        MonitoringLogManager.stopSession(this)
-        MonitoringState.isMonitoring.value = false
-        MonitoringState.currentPrediction.value = "Inactivo"
+        MonitoringLogManager.stopSession(this) // Qué: Invoca la clausura y encriptación o serializado final puro de JSON asíncrono crudo nativo y físico sobre flash del teléfono (Memoria almacenamiento base puro de tesis cruda IoT experimental). Para qué: Salvar los datos a disco encriptándolos como archivo definitivo sin corruptela pura asíncrona en bloque de memoria. Por qué: Resguardar datos oro puros.
+        MonitoringState.isMonitoring.value = false // Qué: Plancha switch general puro y reactivo atómico a off. Para qué: Restablecer la apariencia viva GUI puro nativo asíncrono de Compose Android moderno base crudo. Por qué: UX coherente pura.
+        MonitoringState.currentPrediction.value = "Inactivo" // Qué: Elimina huellas de clasificaciones póstumas crudas de "Caminando" inyectando estatus gris inerte puro. Para qué: Sanear UI base y no confundir. Por qué: Idem UX.
 
-        sensorHandler.stop()
-        if (classifierReady) {
-            classifier.close()
-        }
-        inferenceExecutor.shutdownNow()
+        sensorHandler.stop() // Qué: Ordena cerrar el surtidor IMU del acelerómetro crudo nativo y rudo asíncrono desconectando callback Listener al hardware base puro. Para qué: Cortar flujo C++ de hardware cortando ahogo y gasto eléctrico puro (Batería). Por qué: Regla oro de sensores de Android general pura asíncrona.
+        if (classifierReady) { // Qué: Revisa si de plano la IA TFLite logró nacer alguna vez antes de matarla cruda pura. Para qué: No matar a quien no nació (Evita crasheo NullPointer C++ puro destructor base JNI). Por qué: Seguridad IoT defensiva.
+            classifier.close() // Qué: Aniquila el intérprete C++ TFLite de RAM nativa forzosamente librando memoria MMap y punteros ByteBuffer nativos puros directos a Flash. Para qué: Sanear todo. Por qué: RAM Leak C++ puro letal.
+        } // Qué: Fin condicional de eutanasia de IA base cruda. Para qué: N/A. Por qué: N/A.
+        inferenceExecutor.shutdownNow() // Qué: Aplasta y estrangula cualquier trabajo matemático TFLite crudo que estuviera cursando a medias interrumpiendo a la fuerza al Esclavo en hilo secundario puro y enclaustrado nativo general. Para qué: Liquidar thread. Por qué: PoolLeaks puros asíncronos crudos son un horror depurando concurrencias de JNI e hilos en Kotlin crudo nativo interno Android.
 
         // Liberar WakeLock
-        wakeLock?.let {
-            if (it.isHeld) it.release()
-        }
-        wakeLock = null
+        wakeLock?.let { // Qué: Revisa con caja de arena segura de nulos pura de let cruda Kotlin y moderna. Para qué: Si tuvimos el candado del Kernel procesador crudo vivo y palpitante sin dormirse. Por qué: Validar nulidad cruda.
+            if (it.isHeld) it.release() // Qué: Pide piedad al Kernel de Linux nativo subyacente de Android puro liberando el cerrojo "Held" crudo soltando CPU de regreso a la somnolencia natural doze mode y ahorro eléctrico nativo crudo puro asíncrono general de la plataforma base Google original pura y simple sin consumir un miliamperio más. Para qué: Devolver CPU. Por qué: Batería y calentamiento global del chip Snapdragon o MediaTek puro crudo asíncrono interno.
+        } // Qué: Fin caja arena cierre CPU cruda. Para qué: N/A. Por qué: N/A.
+        wakeLock = null // Qué: Basura explícita Nula cruda de memoria apuntada puramente a la nada abstracta JVM general y base. Para qué: Saneamiento puro. Por qué: Idem.
 
-        super.onDestroy()
-    }
+        super.onDestroy() // Qué: Traspasa orden final fúnebre fática a la clase padre OS puramente. Para qué: Que elimine verdaderamente el servicio Frontal nativo de su tabla RAM matando placa flotante y desvinculando PID. Por qué: Mandatorio Android nativo puro asíncrono.
+    } // Qué: Fin liturgia de terminación de vida Service Android IoT crudo de monitoreo caídas. Para qué: N/A. Por qué: N/A.
 
-    override fun onBind(intent: Intent?): IBinder? = null
-}
+    override fun onBind(intent: Intent?): IBinder? = null // Qué: Función forzosa e indeseada inyectada que retorna basura Nula cruda e inutilizable pura. Para qué: Android te obliga a sobreescribirla siempre que heredes de Service crudo y base de la plataforma nativa. Por qué: En este diseño IoT no acoplamos el servicio (Bound) a la vista de manera dura, lo dejamos suelto rebotando (Started), por lo cual esta interfaz Binder es basura técnica obligatoria nula sin propósito más que cumplir convención estructural de OS.
+} // Qué: Fin abismal y terminal general definitivo de la clase de Servicio Monitoreo crudo asíncrono de TensorFlow 9 clases para la tesis experimental cruda pura base IoT médica. Para qué: N/A. Por qué: N/A.
